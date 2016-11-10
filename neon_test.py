@@ -4,7 +4,8 @@ import numpy as np
 import os
 
 # Import classes
-from convolution_neuron_layer import ConvolutionNeuronLayer
+from conv_net import ConvNet
+from conv_neuron_layer import ConvNeuronLayer
 from neon.layers import Conv, Dropout, Activation, Pooling, GeneralizedCost
 from neon.initializers import Gaussian
 from neon.transforms import Rectlin, Softmax
@@ -15,7 +16,7 @@ from neon.util.argparser import NeonArgparser
 # Import functions
 from six import iterkeys
 
-logger = logging.getLogger()
+logger = logging.getLogger("convolver")
 logger.setLevel(logging.DEBUG)
 
 parser = NeonArgparser(__doc__)
@@ -29,6 +30,8 @@ dataset = CIFAR10(path="~/nervana/data",
                   pad_classes=True)
 valid_set = dataset.valid_iter
 '''
+conv_net = ConvNet()
+
 relu = Rectlin()
 init_uni = Gaussian(scale=0.05)
 conv = dict(init=init_uni, batch_norm=False, activation=relu)
@@ -61,15 +64,15 @@ def ignore_dropout(layers, input_dims):
     if layers[0]["type"] == "neon.layers.layer.Dropout":
         logger.debug("\tIgnoring dropout layer:%s",
                      layers[0]["config"]["name"])
-        return 1, []
+        return 1
     else:
-        return 0, None
+        return 0
 
 def convolution_neuron_layer(layers, input_dims):
     # If there aren't at least two more layers then there
     # can't be a convolution layer followed by a neuron layer!
     if len(layers) < 2:
-        return 0, None
+        return 0
 
     # If first layer is a convolution layer and next is an activation layer
     if (layers[0]["type"] == "neon.layers.layer.Convolution" and
@@ -101,13 +104,17 @@ def convolution_neuron_layer(layers, input_dims):
             logger.warn("Only RectLin activation functions are supported not %s",
                         activation_config["transform"]["type"])
 
-
-        return 2, [ConvolutionNeuronLayer(output_width=input_dims[0],
-                                          output_height=input_dims[1],
-                                          padding=padding, stride=stride,
-                                          weights=weights)]
+        # Add layer to conv net
+        conv_net.layers.append(
+            ConvNeuronLayer(layer_index=len(conv_net.layers),
+                            output_width=input_dims[0],
+                            output_height=input_dims[1],
+                            padding=padding, stride=stride,
+                            weights=weights,
+                            parent_keyspace=conv_net.keyspace))
+        return 2
     else:
-        return 0, None
+        return 0
 
 layer_processing_functions = [ignore_dropout,
                               convolution_neuron_layer]
@@ -116,23 +123,22 @@ def process_layers(layers, input_dims):
     # Loop through layer processing functions
     for l in layer_processing_functions:
         # Call layer processing function with layers
-        n_input_layers_processed, new_output_layers = l(layers, input_dims)
+        n_input_layers_processed = l(layers, input_dims)
 
         if n_input_layers_processed != 0:
-            return n_input_layers_processed, new_output_layers
+            return n_input_layers_processed
 
-    return 0, None
+    return 0
 
 logger.info("Layers")
 input_dims = [32, 32, 3]
-output_layers = []
 l = 0
 while l < len(layers):
     # Slice out unprocessed layers of network
     subsequent_layers = layers[l:]
 
     # Attempt to map to output layers
-    n_input_layers_processed, new_output_layers = process_layers(
+    n_input_layers_processed = process_layers(
         subsequent_layers, input_dims)
 
     # If we failed to process any input layers
@@ -142,5 +148,6 @@ while l < len(layers):
         l += 1
     # Otherwise add newly created output layers to list
     else:
-        output_layers.extend(new_output_layers)
         l += n_input_layers_processed
+
+conv_net.run("192.168.1.1")
