@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 
 # Import classes
 from conv_net import ConvNet
-from conv_neuron_layer import ConvNeuronLayer
 from neon.layers import Conv, Dropout, Activation, Pooling, GeneralizedCost
 from neon.initializers import Gaussian
 from neon.transforms import Rectlin, Softmax
@@ -48,9 +47,12 @@ plt.imshow(np_format)
 plt.show()
 assert False
 '''
+# **TEMP** single input image and neuron parameters for testing
+neuron_threshold = 1.0
+neuron_decay = np.exp(-1.0 / 20.0)
 test_data = np.load("test_image.npy")
 
-conv_net = ConvNet()
+conv_net = ConvNet(neuron_threshold, neuron_decay, test_data)
 
 relu = Rectlin()
 init_uni = Gaussian(scale=0.05)
@@ -113,7 +115,6 @@ def convolution_neuron_layer(layers, input_dims):
         assert conv_f_shape[0] * conv_f_shape[1] *  input_dims[2] == weights.shape[0]
         weights = np.reshape(weights, (conv_f_shape[0], conv_f_shape[1], input_dims[2], weights.shape[1]))
 
-
         # Apply stride and padding equation to input dimensions calculate output dimensions
         input_dims[0] = ((input_dims[0] - conv_f_shape[0] + (2 * padding)) // stride) + 1
         input_dims[1] = ((input_dims[1] - conv_f_shape[1] + (2 * padding)) // stride) + 1
@@ -124,17 +125,10 @@ def convolution_neuron_layer(layers, input_dims):
             logger.warn("Only RectLin activation functions are supported not %s",
                         activation_config["transform"]["type"])
 
-        layer_index = len(conv_net.layers)
-
         # Add layer to conv net
-        conv_net.layers.append(
-            ConvNeuronLayer(layer_index=layer_index,
-                            output_width=input_dims[0],
-                            output_height=input_dims[1],
-                            padding=padding, stride=stride,
-                            weights=weights,
-                            parent_keyspace=conv_net.keyspace,
-                            input_data=test_data if layer_index == 0 else None))
+        conv_net.add_layer(output_width=input_dims[0],
+                           output_height=input_dims[1],
+                           padding=padding, stride=stride, weights=weights)
         return 2
     else:
         return 0

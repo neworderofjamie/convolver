@@ -1,9 +1,27 @@
 # Import modules
+import enum
 import logging
 import numpy as np
 from rig import machine
+import regions
+
+# Import classes
+from rig_cpp_common.regions import Profiler, Statistics, System
 
 logger = logging.getLogger("convolver")
+
+# ----------------------------------------------------------------------------
+# Regions
+# ----------------------------------------------------------------------------
+class Regions(enum.IntEnum):
+    """Region names, corresponding to those defined in `conv_layer.h`"""
+    system = 0
+    neurons = 1
+    conv_kernel = 2
+    input = 3
+    spike_recording = 4
+    profiler = 5
+    statistics = 6
 
 # ----------------------------------------------------------------------------
 # Vertex
@@ -19,19 +37,17 @@ class Vertex(object):
         self.weights = weights
         self.z_slice = z_slice
 
-        min_weight = np.amin(weights)
-        max_weight = np.amax(weights)
-        logger.debug("\t\t\t\tMin kernel weight:%f, max kernel weight:%f, mean kernel weight:%f",
-                     min_weight, max_weight, np.average(weights))
+        max_weight = np.amax(np.fabs(weights))
+        logger.debug("\t\t\t\tMax absolute kernel weight:%f", max_weight)
 
 
         # Get MSB for maximum weight
         max_msb = np.floor(np.log2(max_weight)) + 1
 
         # Calculate where the weight format fixed-point lies
-        self.fixed_point_position = (7 - int(max_msb))
-        logger.debug("\t\t\t\tFixed point position %u",
-                     self.fixed_point_position)
+        self.kernel_fixed_point_pos = (7 - int(max_msb))
+        logger.debug("\t\t\t\tFixed point position %d",
+                     self.kernel_fixed_point_pos)
 
     # ------------------------------------------------------------------------
     # Properties
@@ -50,29 +66,41 @@ class Vertex(object):
 # Layer consisting of a layer of convolutional
 # weights followed by a neural non-linearity
 class ConvNeuronLayer(object):
-    # How large are weights (used to store kernel) and
-    WeightBytes = 1
-    InputBytes = 1
-    StateBytes = 2
+    # Tag names, corresponding to those defined in conv_layer.h
+    profiler_tag_names = {
+        0:  "Convolve spike",
+        1:  "Convolve image",
+        2:  "Update neurons",
+    }
 
-    def __init__(self, layer_index, output_width, output_height, padding, stride,
-                 weights, parent_keyspace, input_data):
-        # Cache dimensions
-        self.output_width = output_width
-        self.output_height = output_height
-        self.padding = padding
-        self.stride = stride
+    # Names of statistics
+    statistic_names = (
+        "task_queue_full",
+        "timer_event_overflows",
+    )
 
-        logger.debug("\t\tOutput width:%u, output height:%u, padding:%u, stride:%u",
-                     self.output_width, self.output_height, self.padding, self.stride)
-
-        # Check blob shape - num samples, depth, width, height
+    def __init__(self, layer_index, output_width, output_height,
+                 padding, stride, weights, parent_keyspace, input_data,
+                 vertex_applications, vertex_resources,
+                 timer_period_us, sim_ticks):
+         # Check blob shape - num samples, depth, width, height
         assert len(weights.shape) == 4
 
-        logger.debug("\t\tKernel width:%u, kernel height:%u, kernel depth:%u, Num kernels:%u",
-                     *weights.shape)
-        self.kernel_width = weights.shape[0]
-        self.kernel_height = weights.shape[1]
+        # If we have input data, check it is in correct
+        # format and matches convolution kernel
+        if input_data is not None:
+            assert len(input_data.shape) == 3
+            assert input_data.shape[0] == weights.shape[2]
+
+        # Create standard regions
+        self.regions = {}
+        self.regions[Regions.system] = System(timer_period_us, sim_ticks)
+        self.regions[Regions.neurons] =\
+            regions.Neurons(output_width, output_height)
+        self.regions[Regions.conv_kernel] =\
+            regions.ConvKernel(weights.shape[0], weights.shape[1],
+                               weights.shape[2], stride)
+        self.regions[Regions.input] = regions.Input(input_data)
 
         # Check bias shape
         '''
@@ -85,24 +113,16 @@ class ConvNeuronLayer(object):
         self.bias = params[1].data
         '''
         # Calculate memory required for the neurons driven by a single kernel
-        neuron_bytes = self.StateBytes * self.output_width * self.output_height
+        neuron_bytes = self.regions[Regions.neurons].output_dim_dtcm_bytes
 
         # Calculate memory required for a single kernel
-        kernel_bytes = (self.WeightBytes * self.kernel_width * self.kernel_height *
-                        weights.shape[2])
+        kernel_bytes = self.regions[Regions.conv_kernel].kernel_dtcm_bytes
 
-        # If input data is directly supplied to this layer
-        if input_data is not None:
-            assert len(input_data.shape) == 3
-            assert input_data.shape[0] == weights.shape[2]
+        # Calculate memory required for any input data
+        input_bytes = self.regions[Regions.input].dtcm_bytes
 
-            # Calculate memory required for input
-            input_bytes = (self.InputBytes * input_data.shape[0] *
-                           input_data.shape[1] * input_data.shape[2])
-        else:
-            input_bytes = 0
 
-        total_bytes = neuron_bytes + kernel_bytes + input_bytes + self.WeightBytes
+        total_bytes = neuron_bytes + kernel_bytes + input_bytes
         logger.debug("\t\tDTCM - neurons:%u bytes, kernel:%u bytes, input:%u bytes, total:%u bytes",
                      neuron_bytes, kernel_bytes, input_bytes, total_bytes)
 
@@ -119,22 +139,21 @@ class ConvNeuronLayer(object):
             logger.debug("\t\t\tVertex %u: z slice: [%u, %u)",
                          vert_index, z_slice_start, z_slice_stop)
 
-            # Build new vertex and add to list
-            self.vertices.append(Vertex(layer_index, vert_index, z_slice,
-                                        parent_keyspace, weights[:,:,:,z_slice]))
+            # Create vertex
+            v = Vertex(layer_index, vert_index, z_slice,
+                            parent_keyspace, weights[:,:,:,z_slice])
 
-        logger.debug("\t\t%u vertices", len(self.vertices))
+            # Add vertex to list
+            self.vertices.append(v)
 
-    # ------------------------------------------------------------------------
-    # Public methods
-    # ------------------------------------------------------------------------
-    def add_apps_and_resources(self, vertex_applications, vertex_resources):
-        # Loop through vertices
-        for v in self.vertices:
             # Add application
+            kernel_width = self.regions[Regions.conv_kernel].kernel_width
+            kernel_height = self.regions[Regions.conv_kernel].kernel_height
             vertex_applications[v] = ("binaries/convolution_neuron_%ux%u.aplx" %
-                                      (self.kernel_width, self.kernel_height))
+                                      (kernel_width, kernel_height))
 
             # Add resources
             # **NOTE** SDRAM needs are minimal so don't bother
             vertex_resources[v] = {machine.Cores: 1}
+
+        logger.debug("\t\t%u vertices", len(self.vertices))
