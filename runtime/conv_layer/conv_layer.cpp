@@ -91,7 +91,7 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
   }
 
   // Read spike recording region
-  if(!g_SpikeRecording.ReadSDRAMData(
+  /*if(!g_SpikeRecording.ReadSDRAMData(
     Config::GetRegionStart(baseAddress, RegionSpikeRecording), flags,
     g_AppWords[AppWordNumNeurons]))
   {
@@ -111,7 +111,7 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
     flags))
   {
     return false;
-  }
+  }*/
 
   return true;
 }
