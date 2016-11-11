@@ -2,6 +2,7 @@
 import logging
 import numpy as np
 import os
+import matplotlib.pyplot as plt
 
 # Import classes
 from conv_net import ConvNet
@@ -10,7 +11,7 @@ from neon.layers import Conv, Dropout, Activation, Pooling, GeneralizedCost
 from neon.initializers import Gaussian
 from neon.transforms import Rectlin, Softmax
 from neon.models import Model
-from neon.data import CIFAR10
+from neon.data import ArrayIterator, CIFAR10
 from neon.util.argparser import NeonArgparser
 
 # Import functions
@@ -28,8 +29,27 @@ dataset = CIFAR10(path="~/nervana/data",
                   contrast_normalize=True,
                   whiten=True,
                   pad_classes=True)
-valid_set = dataset.valid_iter
+_, (cifar_test_images, cifar_test_labels), num_classes = dataset.load_data()
+print cifar_test_images.shape
+cifar_test_images = np.reshape(cifar_test_images,
+                               (cifar_test_images.shape[0], 3, 32, 32))
+print cifar_test_images.shape
+
+first_image = cifar_test_images[100]
+np.save("test_image.npy", first_image)
+min_pixel = np.amin(first_image)
+max_pixel = np.amax(first_image)
+print min_pixel, max_pixel
+
+np_format = np.rollaxis(first_image, 0, 3)
+np_format -= min_pixel
+np_format /= (max_pixel - min_pixel)
+plt.imshow(np_format)
+plt.show()
+assert False
 '''
+test_data = np.load("test_image.npy")
+
 conv_net = ConvNet()
 
 relu = Rectlin()
@@ -104,14 +124,17 @@ def convolution_neuron_layer(layers, input_dims):
             logger.warn("Only RectLin activation functions are supported not %s",
                         activation_config["transform"]["type"])
 
+        layer_index = len(conv_net.layers)
+
         # Add layer to conv net
         conv_net.layers.append(
-            ConvNeuronLayer(layer_index=len(conv_net.layers),
+            ConvNeuronLayer(layer_index=layer_index,
                             output_width=input_dims[0],
                             output_height=input_dims[1],
                             padding=padding, stride=stride,
                             weights=weights,
-                            parent_keyspace=conv_net.keyspace))
+                            parent_keyspace=conv_net.keyspace,
+                            input_data=test_data if layer_index == 0 else None))
         return 2
     else:
         return 0

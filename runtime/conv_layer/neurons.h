@@ -1,15 +1,15 @@
 #pragma once
 
 //-----------------------------------------------------------------------------
-// ConvLayer::NeuronBase
+// ConvLayer::NeuronsBase
 //-----------------------------------------------------------------------------
 namespace ConvLayer
 {
 template<typename State>
-class NeuronBase
+class NeuronsBase
 {
 public:
-  NeuronBase() : m_MembraneVoltage(NULL), m_Width(0), m_Height(0), m_Depth(0)
+  NeuronsBase() : m_MembraneVoltage(NULL), m_Width(0), m_Height(0), m_Depth(0)
   {
   }
 

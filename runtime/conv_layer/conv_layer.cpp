@@ -1,3 +1,5 @@
+#include "conv_layer.h"
+
 // Rig CPP common includes
 #include "rig_cpp_common/circular_buffer.h"
 #include "rig_cpp_common/config.h"
@@ -8,6 +10,10 @@
 #include "rig_cpp_common/statistics.h"
 #include "rig_cpp_common/utils.h"
 
+// Conv layer includes
+#include "conv_kernel.h"
+#include "input.h"
+#include "neurons.h"
 
 // Namespaces
 using namespace Common;
@@ -37,11 +43,9 @@ CircularBuffer<uint32_t, 256> g_SpikeInputBuffer;
 SpikeRecording g_SpikeRecording;
 Statistics<StatWordMax> g_Statistics;
 ConvKernelBase<int8_t, 3> g_ConvKernel;
-NeuronBase<int16_t> g_Neurons;
+NeuronsBase<int16_t> g_Neurons;
 
 uint32_t g_AppWords[AppWordMax];
-
-uint32_t *g_SynapticMatrixBaseAddress = NULL;
 
 uint g_Tick = 0;
 
@@ -67,8 +71,9 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
   }
   else
   {
-    LOG_PRINT(LOG_LEVEL_INFO, "\tWeight fixed point:%u, Num post-neurons:%u",
-      g_AppWords[AppWordWeightFixedPoint], g_AppWords[AppWordNumPostNeurons]);
+    LOG_PRINT(LOG_LEVEL_INFO, "\tZ mask:%08x, z start:%u, spike key:%08x",
+      g_AppWords[AppWordZMask], g_AppWords[AppWordOutputZStart],
+      g_AppWords[AppWordSpikeKey]);
   }
 
   // Read conv kernel region
@@ -77,7 +82,6 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
   {
     return false;
   }
-
 
   // Read conv kernel region
   if(!g_ConvKernel.ReadSDRAMData(
@@ -166,7 +170,7 @@ void UserEvent(uint, uint)
   while(g_SpikeInputBuffer.Pop(spikeKey))
   {
     // Extract x, y and z from spike
-    // **THINK** if z was at bottom of appword could it be used to route
+    // **THINK** if z was at bottom of key it be used to route
     const unsigned int xIn = (spikeKey & 0xFF);
     const unsigned int yIn = (spikeKey >> 8) & 0xFF;
     const unsigned int zIn = (spikeKey >> 16) & g_AppWords[AppWordZMask];
@@ -227,8 +231,8 @@ void TimerTick(uint tick, uint)
         }
       };
 
-      // Update neural state using lambda function to emit spikes
-      g_Neurons.Update(emitSpike);
+    // Update neural state using lambda function to emit spikes
+    g_Neurons.Update(emitSpike);
   }
 }
 } // Anonymous namespace
@@ -253,8 +257,10 @@ extern "C" void c_main()
   spin1_set_timer_tick(g_Config.GetTimerPeriod());
 
   // Register callbacks
-  spin1_callback_on(DMA_TRANSFER_DONE,  DMATransferDone,  0);
-  spin1_callback_on(TIMER_TICK,         TimerTick,        2);
+  spin1_callback_on(MC_PACKET_RECEIVED, MCPacketReceived, -1);
+  spin1_callback_on(DMA_TRANSFER_DONE,  DMATransferDone,   0);
+  spin1_callback_on(USER_EVENT,         UserEvent,         0);
+  spin1_callback_on(TIMER_TICK,         TimerTick,         2);
 
   // Start simulation
   spin1_start(SYNC_WAIT);

@@ -28,17 +28,6 @@ class Vertex(object):
         # Get MSB for maximum weight
         max_msb = np.floor(np.log2(max_weight)) + 1
 
-        # If minimum weight isn't zero
-        if min_weight != 0.0:
-            # Get MSB of minimum weight
-            min_msb = np.floor(np.log2(min_weight)) + 1
-
-            # Check there's enough bits to represent this range
-            if (max_msb - min_msb) >= 7:
-                logger.warn("Insufficient range in 7-bit weight to represent "
-                            "minimum weight:%f and maximum weight:%f",
-                            min_weight, max_weight)
-
         # Calculate where the weight format fixed-point lies
         self.fixed_point_position = (7 - int(max_msb))
         logger.debug("\t\t\t\tFixed point position %u",
@@ -63,10 +52,11 @@ class Vertex(object):
 class ConvNeuronLayer(object):
     # How large are weights (used to store kernel) and
     WeightBytes = 1
+    InputBytes = 1
     StateBytes = 2
 
     def __init__(self, layer_index, output_width, output_height, padding, stride,
-                 weights, parent_keyspace):
+                 weights, parent_keyspace, input_data):
         # Cache dimensions
         self.output_width = output_width
         self.output_height = output_height
@@ -101,9 +91,20 @@ class ConvNeuronLayer(object):
         kernel_bytes = (self.WeightBytes * self.kernel_width * self.kernel_height *
                         weights.shape[2])
 
-        total_bytes = neuron_bytes + kernel_bytes + self.WeightBytes
-        logger.debug("\t\tDTCM - neurons:%u bytes, kernel:%u bytes, total:%u bytes",
-                     neuron_bytes, kernel_bytes, total_bytes)
+        # If input data is directly supplied to this layer
+        if input_data is not None:
+            assert len(input_data.shape) == 3
+            assert input_data.shape[0] == weights.shape[2]
+
+            # Calculate memory required for input
+            input_bytes = (self.InputBytes * input_data.shape[0] *
+                           input_data.shape[1] * input_data.shape[2])
+        else:
+            input_bytes = 0
+
+        total_bytes = neuron_bytes + kernel_bytes + input_bytes + self.WeightBytes
+        logger.debug("\t\tDTCM - neurons:%u bytes, kernel:%u bytes, input:%u bytes, total:%u bytes",
+                     neuron_bytes, kernel_bytes, input_bytes, total_bytes)
 
         # Calculate how many of these kernels can fit on each core
         num_kernels_per_core = (64 * 1024) // total_bytes
