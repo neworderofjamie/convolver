@@ -17,7 +17,7 @@ class Neurons(Region):
     # How many bytes does the state of each neuron require
     StateBytes = 2
 
-    def __init__(self, output_width, output_height):
+    def __init__(self, output_width, output_height, decay, threshold):
         """Create a new neurons region.
 
         Parameters
@@ -29,14 +29,17 @@ class Neurons(Region):
         """
         self.output_width = output_width
         self.output_height = output_height
+        self.decay = decay
+        self.threshold = threshold
 
-        logger.debug("\t\tOutput width:%u, output height:%u",
-                     self.output_width, self.output_height)
+        logger.debug("\t\tOutput width:%u, output height:%u, neuron decay:%f, neuron threshold:%f",
+                     self.output_width, self.output_height,
+                     self.decay, self.threshold)
 
     # --------------------------------------------------------------------------
     # Region methods
     # --------------------------------------------------------------------------
-    def sizeof(self, output_depth, threshold, decay, fixed_point_pos):
+    def sizeof(self, output_depth, fixed_point_pos):
         """Get the size requirements of the region in bytes.
 
         Parameters
@@ -52,8 +55,7 @@ class Neurons(Region):
         """
         return (5 * 4)
 
-    def write_subregion_to_file(self, fp, output_depth, threshold, decay,
-                                fixed_point_pos):
+    def write_subregion_to_file(self, fp, output_depth, fixed_point_pos):
         """Write a portion of the region to a file applying the formatter.
 
         Parameters
@@ -69,8 +71,8 @@ class Neurons(Region):
 
         # Write structure
         fp.write(struct.pack("3I2i", self.output_width, self.output_height,
-                             output_depth, convert(threshold),
-                             convert(decay)))
+                             output_depth, convert(self.threshold),
+                             convert(self.decay)))
 
     # --------------------------------------------------------------------------
     # Properties

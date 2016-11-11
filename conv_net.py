@@ -23,8 +23,8 @@ class ConvNet(object):
     def __init__(self, neuron_threshold, neuron_decay, test_data,
                  timer_period_us=1000, sim_ticks=1000):
         # Cache network parameters
-        self.neuron_threshold = neuron_threshold
-        self.neuron_decay = neuron_decay
+        self._neuron_threshold = neuron_threshold
+        self._neuron_decay = neuron_decay
         self._test_data = test_data
         self._timer_period_us = timer_period_us
         self._sim_ticks = sim_ticks
@@ -54,8 +54,10 @@ class ConvNet(object):
             ConvNeuronLayer(layer_index=layer_index,
                             output_width=output_width,
                             output_height=output_height,
-                            padding=padding, stride=stride, weights=weights,
-                            parent_keyspace=self._keyspace,
+                            padding=padding, stride=stride,
+                            neuron_decay=self._neuron_decay,
+                            neuron_threshold=self._neuron_threshold,
+                            weights=weights, parent_keyspace=self._keyspace,
                             input_data=(self._test_data if layer_index == 0
                                         else None),
                             vertex_applications=self._vertex_applications,
@@ -88,34 +90,52 @@ class ConvNet(object):
                 nets.append(net)
                 net_keys[net] = net_key
 
-        # Get machine controller from connected SpiNNaker board and boot
-        machine_controller = MachineController(spinnaker_hostname)
-        machine_controller.boot()
+        machine_controller = None
+        try:
+            # Get machine controller from connected SpiNNaker board and boot
+            machine_controller = MachineController(spinnaker_hostname)
+            machine_controller.boot()
 
-        # Get system info
-        system_info = machine_controller.get_system_info()
-        logger.debug("Found %u chip machine", len(system_info))
+            # Get system info
+            system_info = machine_controller.get_system_info()
+            logger.debug("Found %u chip machine", len(system_info))
 
-        # Place-and-route
-        logger.info("Placing and routing")
-        placements, allocations, run_app_map, routing_tables =\
-            place_and_route_wrapper(self._vertex_resources,
-                                    self._vertex_applications,
-                                    nets, net_keys, system_info)
+            # Place-and-route
+            logger.info("Placing and routing")
+            placements, allocations, run_app_map, routing_tables =\
+                place_and_route_wrapper(self._vertex_resources,
+                                        self._vertex_applications,
+                                        nets, net_keys, system_info)
 
-        # Convert placement values to a set to get unique list of chips
-        unique_chips = set(itervalues(placements))
-        logger.info("Placed on %u cores (%u chips)",
-                    len(placements), len(unique_chips))
-        logger.debug(list(itervalues(placements)))
+            # Convert placement values to a set to get unique list of chips
+            unique_chips = set(itervalues(placements))
+            logger.info("Placed on %u cores (%u chips)",
+                        len(placements), len(unique_chips))
+            logger.debug(list(itervalues(placements)))
 
-        # If software watchdog is disabled, write zero to each chip in
-        # placement's SV struct, otherwise, write default from SV struct file
-        wdog = (0 if disable_software_watchdog else
-                machine_controller.structs["sv"]["soft_wdog"].default)
-        for x, y in unique_chips:
-            logger.debug("Setting software watchdog to %u for chip %u, %u",
-                         wdog, x, y)
-            machine_controller.write_struct_field("sv", "soft_wdog",
-                                                  wdog, x, y)
+            # If software watchdog is disabled, write zero to each chip in
+            # placement's SV struct, otherwise, write default from SV struct file
+            wdog = (0 if disable_software_watchdog else
+                    machine_controller.structs["sv"]["soft_wdog"].default)
+            for x, y in unique_chips:
+                logger.debug("Setting software watchdog to %u for chip %u, %u",
+                            wdog, x, y)
+                machine_controller.write_struct_field("sv", "soft_wdog",
+                                                    wdog, x, y)
 
+            logger.info("Loading layers")
+            z_length = self._keyspace.get_location_and_length("z")[1]
+            z_mask = (1 << z_length) - 1
+            logger.debug("Z length:%u, mask:%08x", z_length, z_mask)
+
+            for l in self._layers:
+                l.load(placements, allocations, machine_controller, z_mask)
+
+            # Load routing tables and applications
+            logger.info("Loading routing tables")
+            machine_controller.load_routing_tables(routing_tables)
+
+        finally:
+            if machine_controller is not None:
+                logger.info("Stopping SpiNNaker application")
+                machine_controller.send_signal("stop")

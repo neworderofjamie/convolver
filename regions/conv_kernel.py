@@ -3,6 +3,7 @@ import logging
 import struct
 
 # Import classes
+from rig.type_casts import NumpyFloatToFixConverter
 from rig_cpp_common.regions import Region
 
 logger = logging.getLogger("pynn_spinnaker")
@@ -55,7 +56,8 @@ class ConvKernel(Region):
             The number of bytes required to store the data in the given slice
             of the region.
         """
-        return 0
+        #
+        return 8 + (weights.shape[3] * self.kernel_dtcm_bytes)
 
     def write_subregion_to_file(self, fp, weights, fixed_point_pos):
         """Write a portion of the region to a file applying the formatter.
@@ -69,11 +71,14 @@ class ConvKernel(Region):
             list of words to write to application-specific
             area of system region
         """
-        # Write structure
-        #fp.write(struct.pack("%uI" % (2 + len(application_words)),
-        #                     self.timer_period_us,
-        #                     self.simulation_ticks,
-         #                    *application_words))
+        # Write structure containing the number of kernels on the core
+        # and the depth of each one (width and height are compile-time)
+        fp.write(struct.pack("2I", weights.shape[3], weights.shape[2]))
+
+         # Write kernel data
+        convert = NumpyFloatToFixConverter(signed=True, n_bits=8,
+                                           n_frac=fixed_point_pos)
+        fp.write(convert(weights).tostring())
 
     # --------------------------------------------------------------------------
     # Properties

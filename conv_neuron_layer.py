@@ -6,7 +6,12 @@ from rig import machine
 import regions
 
 # Import classes
+from collections import defaultdict
 from rig_cpp_common.regions import Profiler, Statistics, System
+from rig_cpp_common.utils import Args
+
+# Import functions
+from rig_cpp_common.utils import load_regions
 
 logger = logging.getLogger("convolver")
 
@@ -37,6 +42,10 @@ class Vertex(object):
         self.weights = weights
         self.z_slice = z_slice
 
+        # Create a temporary child keyspace to ensure the
+        # z-field is large enough to contain all z-values
+        max_z_keyspace = self.keyspace(z=self.z_slice.stop)
+
         max_weight = np.amax(np.fabs(weights))
         logger.debug("\t\t\t\tMax absolute kernel weight:%f", max_weight)
 
@@ -45,9 +54,9 @@ class Vertex(object):
         max_msb = np.floor(np.log2(max_weight)) + 1
 
         # Calculate where the weight format fixed-point lies
-        self.kernel_fixed_point_pos = (7 - int(max_msb))
+        self.fixed_point_pos = (7 - int(max_msb))
         logger.debug("\t\t\t\tFixed point position %d",
-                     self.kernel_fixed_point_pos)
+                     self.fixed_point_pos)
 
     # ------------------------------------------------------------------------
     # Properties
@@ -80,7 +89,8 @@ class ConvNeuronLayer(object):
     )
 
     def __init__(self, layer_index, output_width, output_height,
-                 padding, stride, weights, parent_keyspace, input_data,
+                 padding, stride, weights, neuron_decay, neuron_threshold,
+                 parent_keyspace, input_data,
                  vertex_applications, vertex_resources,
                  timer_period_us, sim_ticks):
          # Check blob shape - num samples, depth, width, height
@@ -96,7 +106,8 @@ class ConvNeuronLayer(object):
         self.regions = {}
         self.regions[Regions.system] = System(timer_period_us, sim_ticks)
         self.regions[Regions.neurons] =\
-            regions.Neurons(output_width, output_height)
+            regions.Neurons(output_width, output_height,
+                            neuron_decay, neuron_threshold)
         self.regions[Regions.conv_kernel] =\
             regions.ConvKernel(weights.shape[0], weights.shape[1],
                                weights.shape[2], stride)
@@ -157,3 +168,50 @@ class ConvNeuronLayer(object):
             vertex_resources[v] = {machine.Cores: 1}
 
         logger.debug("\t\t%u vertices", len(self.vertices))
+
+    # ----------------------------------------------------------------------------
+    # Public methods
+    # ----------------------------------------------------------------------------
+    def load(self, placements, allocations, machine_controller, z_mask):
+        # Loop through vertices
+        for v in self.vertices:
+            # Get placement and allocation
+            vertex_placement = placements[v]
+            vertex_allocation = allocations[v]
+
+            # Get core this vertex should be run on
+            core = vertex_allocation[machine.Cores]
+            assert (core.stop - core.start) == 1
+
+            logger.debug("\t\t\tVertex %s (%u, %u, %u)",
+                            v, vertex_placement[0], vertex_placement[1],
+                            core.start)
+
+            # Select placed chip
+            with machine_controller(x=vertex_placement[0],
+                                    y=vertex_placement[1]):
+                # Create region arguments
+                region_arguments = defaultdict(Args)
+
+                # Add kwargs for regions that require them
+                region_arguments[Regions.system].kwargs["application_words"] =\
+                    [z_mask, v.z_slice.start, v.routing_key]
+
+                # Add neurons region kwargs
+                region_arguments[Regions.neurons].kwargs["output_depth"] =\
+                    (v.z_slice.stop - v.z_slice.start)
+                region_arguments[Regions.neurons].kwargs["fixed_point_pos"] =\
+                    v.fixed_point_pos
+
+                # Add conv kernel region kwargs
+                region_arguments[Regions.conv_kernel].kwargs["weights"] =\
+                    v.weights
+                region_arguments[Regions.conv_kernel].kwargs["fixed_point_pos"] =\
+                    v.fixed_point_pos
+
+                # Load regions
+                v.region_memory = load_regions(self.regions, region_arguments,
+                                               machine_controller, core,
+                                               logger)
+
+

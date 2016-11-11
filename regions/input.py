@@ -4,6 +4,7 @@ import numpy as np
 import struct
 
 # Import classes
+from rig.type_casts import NumpyFloatToFixConverter
 from rig_cpp_common.regions import Region
 
 
@@ -34,22 +35,16 @@ class Input(Region):
             max_msb = np.floor(np.log2(max_input)) + 1
 
             # Calculate where the weight format fixed-point lies
-            self.input_fixed_point_pos = (7 - int(max_msb))
+            self.fixed_point_pos = (7 - int(max_msb))
 
             logger.debug("\t\tInput fixed-point position:%d, data channels:%u, width:%u, height:%u",
-                        self.input_fixed_point_pos, *self.input_data.shape)
+                        self.fixed_point_pos, *self.input_data.shape)
 
     # --------------------------------------------------------------------------
     # Region methods
     # --------------------------------------------------------------------------
-    def sizeof(self, application_words):
+    def sizeof(self):
         """Get the size requirements of the region in bytes.
-
-        Parameters
-        ----------
-        application_words: list
-            list of words to write to application-specific
-            area of system region
 
         Returns
         -------
@@ -57,18 +52,15 @@ class Input(Region):
             The number of bytes required to store the data in the given slice
             of the region.
         """
-        # If input data is directly supplied to this layer
-        if input_data is not None:
-            assert len(input_data.shape) == 3
-            assert input_data.shape[0] == weights.shape[2]
-
-            # Calculate memory required for input
-            input_bytes = (self.InputBytes * input_data.shape[0] *
-                           input_data.shape[1] * input_data.shape[2])
+        # If there's no input data, region will just contain a zero
+        if self.input_data is None:
+            return 4
+        # Otherwise, count, num channels, width, height and image data
         else:
-            input_bytes = 0
+            return 16 + self.dtcm_bytes
 
-    def write_subregion_to_file(self, fp, application_words):
+
+    def write_subregion_to_file(self, fp):
         """Write a portion of the region to a file applying the formatter.
 
         Parameters
@@ -76,15 +68,19 @@ class Input(Region):
         fp : file-like object
             The file-like object to which data from the region will be written.
             This must support a `write` method.
-        application_words: list
-            list of words to write to application-specific
-            area of system region
         """
-        # Write structure
-        #fp.write(struct.pack("%uI" % (2 + len(application_words)),
-        #                     self.timer_period_us,
-        #                     self.simulation_ticks,
-         #                    *application_words))
+        # If there is no input data, write a zero
+        if self.input_data is None:
+            fp.write(struct.pack("I", 0))
+        # Otherwise
+        else:
+            # Write header
+            fp.write(struct.pack("4I", 1, *self.input_data.shape))
+
+            # Write input data
+            convert = NumpyFloatToFixConverter(signed=True, n_bits=8,
+                                               n_frac=self.fixed_point_pos)
+            fp.write(convert(self.input_data).tostring())
 
     # --------------------------------------------------------------------------
     # Properties
