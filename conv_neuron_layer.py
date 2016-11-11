@@ -141,6 +141,12 @@ class ConvNeuronLayer(object):
         num_kernels_per_core = (64 * 1024) // total_bytes
         logger.debug("\t\t%u kernels per core", num_kernels_per_core)
 
+        kernel_width = self.regions[Regions.conv_kernel].kernel_width
+        kernel_height = self.regions[Regions.conv_kernel].kernel_height
+        vertex_application = ("binaries/convolution_neuron_%ux%u.aplx" %
+                              (kernel_width, kernel_height))
+        logger.debug("\t\tApplication: %s", vertex_application)
+
         # Loop through slices of kernels to assign to each core
         self.vertices = []
         for vert_index, z_slice_start in enumerate(range(0, weights.shape[3], num_kernels_per_core)):
@@ -160,8 +166,7 @@ class ConvNeuronLayer(object):
             # Add application
             kernel_width = self.regions[Regions.conv_kernel].kernel_width
             kernel_height = self.regions[Regions.conv_kernel].kernel_height
-            vertex_applications[v] = ("binaries/convolution_neuron_%ux%u.aplx" %
-                                      (kernel_width, kernel_height))
+            vertex_applications[v] = vertex_application
 
             # Add resources
             # **NOTE** SDRAM needs are minimal so don't bother
