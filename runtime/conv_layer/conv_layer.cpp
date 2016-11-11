@@ -1,7 +1,6 @@
 #include "conv_layer.h"
 
 // Rig CPP common includes
-#include "rig_cpp_common/circular_buffer.h"
 #include "rig_cpp_common/config.h"
 #include "rig_cpp_common/fixed_point_number.h"
 #include "rig_cpp_common/log.h"
@@ -39,11 +38,11 @@ enum DMATag
 // Module level variables
 //----------------------------------------------------------------------------
 Config g_Config;
-CircularBuffer<uint32_t, 256> g_SpikeInputBuffer;
+SpikeInputBuffer g_SpikeInputBuffer;
 SpikeRecording g_SpikeRecording;
 Statistics<StatWordMax> g_Statistics;
-ConvKernelBase<int8_t, 3> g_ConvKernel;
-NeuronsBase<int16_t> g_Neurons;
+ConvKernel g_ConvKernel;
+Neurons g_Neurons;
 
 uint32_t g_AppWords[AppWordMax];
 

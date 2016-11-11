@@ -1,19 +1,14 @@
 #pragma once
 
-// Model includes
-#include "../../input_buffer.h"
-#include "../../intrinsic_plasticity_models/stub.h"
-#include "../../neuron_models/if_cond.h"
-#include "../../synapse_models/exp.h"
+// Rig CPP common
+#include "rig_cpp_common/circular_buffer.h"
 
-namespace NeuronProcessor
+namespace ConvLayer
 {
 //-----------------------------------------------------------------------------
 // Typedefines
 //-----------------------------------------------------------------------------
-typedef NeuronModels::IFCond Neuron;
-typedef SynapseModels::Exp Synapse;
-typedef IntrinsicPlasticityModels::Stub IntrinsicPlasticity;
-
-typedef InputBufferBase<uint32_t> InputBuffer;
+typedef CircularBuffer<uint32_t, 256> SpikeInputBuffer;
+typedef ConvKernelBase<int8_t, 3> ConvKernel;
+typedef NeuronsBase<int16_t> Neurons;
 };
