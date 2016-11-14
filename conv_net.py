@@ -23,7 +23,7 @@ logger = logging.getLogger("convolver")
 # ----------------------------------------------------------------------------
 class ConvNet(object):
     def __init__(self, neuron_threshold, neuron_decay, test_data,
-                 timer_period_us=1000, sim_ticks=200):
+                 timer_period_us=20000, sim_ticks=200):
         # Cache network parameters
         self._neuron_threshold = neuron_threshold
         self._neuron_decay = neuron_decay
@@ -170,10 +170,18 @@ class ConvNet(object):
 
             # Save off layer data
             for i, l in enumerate(self._layers):
-                spikes = l.read_recorded_spikes(machine_controller)
+                spikes = l.read_recorded_spikes()
                 np.save("layer_%u.npy" % i, spikes)
 
-            
+            for i, l in enumerate(self._layers):
+                stats = l.read_statistics()
+                logger.info("\tLayer %u", i)
+                logger.info("\t\tInput buffer overflows:%u",
+                            np.sum(stats["input_buffer_overflows"]))
+                logger.info("\t\tTask queue overflows:%u",
+                            np.sum(stats["task_queue_full"]))
+                logger.info("\t\tTimer event overruns:%u",
+                            np.sum(stats["timer_event_overflows"]))
 
         finally:
             if machine_controller is not None:

@@ -111,6 +111,7 @@ class ConvNeuronLayer(object):
             regions.ConvKernel(weights.shape[0], weights.shape[1],
                                weights.shape[2], stride)
         self.regions[Regions.input] = regions.Input(input_data, padding)
+        self.regions[Regions.statistics] = Statistics(len(self.statistic_names))
 
         # Check bias shape
         '''
@@ -176,12 +177,21 @@ class ConvNeuronLayer(object):
     # ----------------------------------------------------------------------------
     # Public methods
     # ----------------------------------------------------------------------------
-    def read_recorded_spikes(self, machine_controller):
+    def read_recorded_spikes(self):
         region = self.regions[Regions.neurons]
         return np.concatenate(
             [region.read_recorded_spikes(v.z_slice,
                                          v.region_memory[Regions.neurons])
             for v in self.vertices], axis=3)
+
+    def read_statistics(self):
+        # Get the statistics recording region
+        region = self.regions[Regions.statistics]
+
+        # Read stats from all vertices
+        return region.read_stats(
+            [v.region_memory[Regions.statistics] for v in self.vertices],
+            self.statistic_names)
 
     def load(self, placements, allocations, machine_controller, z_mask):
         # Loop through vertices
