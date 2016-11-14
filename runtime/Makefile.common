@@ -140,10 +140,10 @@ LS  := \ls -l
 ifdef PROFILER_ENABLED
 	BUILDDIR = build_profiled
 	CFLAGS += -DPROFILER_ENABLED
-	APP = $(PYNN_APP)_profiled
+	APP = $(CONVOLVER_APP)_profiled
 else
 	BUILDDIR = build
-	APP = $(PYNN_APP)
+	APP = $(CONVOLVER_APP)
 endif
 
 ifdef LOG_LEVEL
@@ -161,7 +161,7 @@ CONVOLVER_RUNTIME := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 ABSOLUTE_CONVOLVER_SOURCES = $(abspath $(CONVOLVER_SOURCES))
 
 # Make these relative to the spinnaker_components directory
-RELATIVE_CONVOLVERSOURCES := $(ABSOLUTE_CONVOLVER_SOURCES:$(CONVOLVER_RUNTIME)/%.cpp=%.cpp)
+RELATIVE_CONVOLVER_SOURCES := $(ABSOLUTE_CONVOLVER_SOURCES:$(CONVOLVER_RUNTIME)/%.cpp=%.cpp)
 
 # Construct the list of objects to build - in subdirectories beneath $(BUILDDIR)
 OBJECTS = $(RELATIVE_CONVOLVER_SOURCES:%.cpp=$(BUILDDIR)/convolver/%.o)
@@ -212,12 +212,12 @@ $(APP).elf: $(OBJECTS) $(SCRIPT) $(LIBRARY)
 	$(RM) sark_build.c sark_build.o
 	$(OD) $(APP).elf
 
-# Build PyNN SpiNNaker  C source files into object files
+# Build Convolver SpiNNaker  C source files into object files
 $(BUILDDIR)/convolver/%.o: $(CONVOLVER_RUNTIME)/%.c $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
 	-mkdir -p $(dir $@)
 	$(CC) -std=gnu99 $(CFLAGS) $< -o $@
 
-# Build PyNN SpiNNaker C++ source files into object files
+# Build Convolver SpiNNaker C++ source files into object files
 $(BUILDDIR)/convolver/%.o: $(CONVOLVER_RUNTIME)/%.cpp $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
 	-mkdir -p $(dir $@)
 	$(CC) -std=c++11 $(CFLAGS) $< -o $@
@@ -234,7 +234,6 @@ $(BUILDDIR)/rig_cpp_common/%.o: $(RIG_CPP_COMMON_RUNTIME)/%.cpp $(INC_DIR)/spinn
 
 
 # Tidy and cleaning dependencies
-
 tidy:
 	$(RM) $(OBJECTS) $(APP).elf $(APP).txt $(APP).aplx $(APP).nm
 clean: tidy
