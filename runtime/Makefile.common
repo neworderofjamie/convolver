@@ -48,6 +48,21 @@ GP  := arm-none-eabi
 
 LIB := 0
 
+
+ifdef PROFILER_ENABLED
+	BUILDDIR = build_profiled
+	CFLAGS += -DPROFILER_ENABLED
+	APP = $(CONVOLVER_APP)_profiled
+else
+	BUILDDIR = build
+	APP = $(CONVOLVER_APP)
+endif
+
+ifdef LOG_LEVEL
+	CFLAGS += -DLOG_LEVEL=$(LOG_LEVEL)
+endif
+
+
 # If SPINN_DIRS is defined, use that to find include and lib directories
 # otherwise look two levels up
 
@@ -136,19 +151,6 @@ RM  := \rm -f
 LS  := \ls -l
 
 #-------------------------------------------------------------------------------
-
-ifdef PROFILER_ENABLED
-	BUILDDIR = build_profiled
-	CFLAGS += -DPROFILER_ENABLED
-	APP = $(CONVOLVER_APP)_profiled
-else
-	BUILDDIR = build
-	APP = $(CONVOLVER_APP)
-endif
-
-ifdef LOG_LEVEL
-	CFLAGS += -DLOG_LEVEL=$(LOG_LEVEL)
-endif
 
 # Find Rig CPP common directory
 RIG_CPP_COMMON := $(shell rig_cpp_common_path)
