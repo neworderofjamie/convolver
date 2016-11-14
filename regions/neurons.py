@@ -1,6 +1,7 @@
 # Import modules
 import logging
 import math
+import numpy as np
 import struct
 
 # Import classes
@@ -92,6 +93,40 @@ class Neurons(Region):
                              self.output_width, self.output_height,
                              output_depth, 1 if self.record_spikes else 0,
                              convert(self.threshold), convert(self.decay)))
+
+    def read_recorded_spikes(self, z_slice, region_memory):
+        assert self.record_spikes
+
+        # Calculate size of bitfield required to
+        # represent one time step of spiking output
+        output_depth = z_slice.stop - z_slice.start
+        num_neurons = self.output_width * self.output_height * output_depth
+        sample_bytes = calc_bitfield_words(num_neurons) * 4
+
+        # Seek to start of recording memory
+        region_memory.seek(6 * 4)
+
+        # Read data from memory
+        data = region_memory.read(sample_bytes * self.sim_ticks)
+
+        # Load into numpy
+        data = np.fromstring(data, dtype=np.uint8)
+
+        # Swap endianness
+        data = data.view(dtype=np.uint32).byteswap().view(dtype=np.uint8)
+
+        # Reverse bit order within each word
+        data = np.fliplr(np.unpackbits(data).reshape(-1, 32))
+
+        # Finally reshape into a sample shaped vector
+        data = data.reshape((-1, sample_bytes * 8))
+
+        # Slice off padding
+        data = data[:, :num_neurons]
+
+        # Reshape into 4D
+        return data.reshape((self.sim_ticks, self.output_width, self.output_height, output_depth))
+
 
     # --------------------------------------------------------------------------
     # Properties

@@ -1,7 +1,9 @@
 # Import modules
 import itertools
 import logging
+import numpy as np
 from rig import machine
+import time
 
 # Import classes
 from conv_neuron_layer import ConvNeuronLayer
@@ -12,7 +14,7 @@ from rig.netlist import Net
 
 # Import functions
 from rig.place_and_route import place_and_route_wrapper
-from six import itervalues
+from six import iteritems, itervalues
 
 logger = logging.getLogger("convolver")
 
@@ -21,7 +23,7 @@ logger = logging.getLogger("convolver")
 # ----------------------------------------------------------------------------
 class ConvNet(object):
     def __init__(self, neuron_threshold, neuron_decay, test_data,
-                 timer_period_us=1000, sim_ticks=1000):
+                 timer_period_us=1000, sim_ticks=200):
         # Cache network parameters
         self._neuron_threshold = neuron_threshold
         self._neuron_decay = neuron_decay
@@ -141,7 +143,69 @@ class ConvNet(object):
             logger.info("Loading routing tables")
             machine_controller.load_routing_tables(routing_tables)
 
+            logger.info("Loading applications")
+            machine_controller.load_application(run_app_map)
+
+            # Wait for all cores to hit SYNC0
+            logger.info("Waiting for synch")
+            num_verts = len(self._vertex_resources)
+            self._wait_for_transition(placements, allocations,
+                                      machine_controller,
+                                      AppState.init, AppState.sync0,
+                                      num_verts)
+
+            # Sync!
+            machine_controller.send_signal("sync0")
+
+            # Wait for simulation to complete
+            logger.info("Simulating")
+            time.sleep(float(self._timer_period_us * self._sim_ticks) / 1000000.0)
+
+            # Wait for all cores to exit
+            logger.info("Waiting for exit")
+            self._wait_for_transition(placements, allocations,
+                                      machine_controller,
+                                      AppState.run, AppState.exit,
+                                      num_verts)
+
+            # Save off layer data
+            for i, l in enumerate(self._layers):
+                spikes = l.read_recorded_spikes(machine_controller)
+                np.save("layer_%u.npy" % i, spikes)
+
+            
+
         finally:
             if machine_controller is not None:
                 logger.info("Stopping SpiNNaker application")
                 machine_controller.send_signal("stop")
+
+    # ------------------------------------------------------------------------
+    # Private methods
+    # ------------------------------------------------------------------------
+    def _wait_for_transition(self, placements, allocations, machine_controller,
+                             from_state, to_state,
+                             num_verts, timeout=5.0):
+        while True:
+            # If no cores are still in from_state, stop
+            if machine_controller.count_cores_in_state(from_state) == 0:
+                break
+
+            # Wait a bit
+            time.sleep(1.0)
+
+        # Wait for all cores to reach to_state
+        cores_in_to_state =\
+            machine_controller.wait_for_cores_to_reach_state(
+                to_state, num_verts, timeout=timeout)
+        if cores_in_to_state != num_verts:
+            # Loop through all placed vertices
+            for vertex, (x, y) in iteritems(placements):
+                p = allocations[vertex][machine.Cores].start
+                status = machine_controller.get_processor_status(p, x, y)
+                if status.cpu_state is not to_state:
+                    print("Core ({}, {}, {}) in state {!s}".format(
+                        x, y, p, status))
+                    print machine_controller.get_iobuf(p, x, y)
+            raise Exception("Unexpected core failures "
+                            "before reaching %s state (%u/%u)." % (to_state, cores_in_to_state, num_verts))

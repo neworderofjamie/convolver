@@ -176,6 +176,13 @@ class ConvNeuronLayer(object):
     # ----------------------------------------------------------------------------
     # Public methods
     # ----------------------------------------------------------------------------
+    def read_recorded_spikes(self, machine_controller):
+        region = self.regions[Regions.neurons]
+        return np.concatenate(
+            [region.read_recorded_spikes(v.z_slice,
+                                         v.region_memory[Regions.neurons])
+            for v in self.vertices], axis=3)
+
     def load(self, placements, allocations, machine_controller, z_mask):
         # Loop through vertices
         for v in self.vertices:

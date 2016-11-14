@@ -153,8 +153,6 @@ public:
             // Update membrane voltage
             *membraneVoltage++ = neuronMembraneVoltage;
           }
-
-
         }
       }
     }
