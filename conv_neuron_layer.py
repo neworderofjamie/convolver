@@ -24,9 +24,8 @@ class Regions(enum.IntEnum):
     neurons = 1
     conv_kernel = 2
     input = 3
-    spike_recording = 4
-    profiler = 5
-    statistics = 6
+    profiler = 4
+    statistics = 5
 
 # ----------------------------------------------------------------------------
 # Vertex
@@ -89,7 +88,7 @@ class ConvNeuronLayer(object):
 
     def __init__(self, start_vert_index, output_width, output_height,
                  padding, stride, weights, neuron_decay, neuron_threshold,
-                 parent_keyspace, input_data,
+                 record_spikes, parent_keyspace, input_data,
                  vertex_applications, vertex_resources,
                  timer_period_us, sim_ticks):
          # Check blob shape - num samples, depth, width, height
@@ -106,7 +105,8 @@ class ConvNeuronLayer(object):
         self.regions[Regions.system] = System(timer_period_us, sim_ticks)
         self.regions[Regions.neurons] =\
             regions.Neurons(output_width, output_height,
-                            neuron_decay, neuron_threshold)
+                            neuron_decay, neuron_threshold, record_spikes,
+                            sim_ticks)
         self.regions[Regions.conv_kernel] =\
             regions.ConvKernel(weights.shape[0], weights.shape[1],
                                weights.shape[2], stride)

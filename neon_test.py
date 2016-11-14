@@ -128,7 +128,8 @@ def convolution_neuron_layer(layers, input_dims):
         # Add layer to conv net
         conv_net.add_layer(output_width=input_dims[0],
                            output_height=input_dims[1],
-                           padding=padding, stride=stride, weights=weights)
+                           padding=padding, stride=stride, weights=weights,
+                           record_spikes=True)
         return 2
     else:
         return 0

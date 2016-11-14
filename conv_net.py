@@ -46,7 +46,8 @@ class ConvNet(object):
     # ------------------------------------------------------------------------
     # Public methods
     # ------------------------------------------------------------------------
-    def add_layer(self, output_width, output_height, padding, stride, weights):
+    def add_layer(self, output_width, output_height, padding, stride, weights,
+                  record_spikes):
         # Get index of new layer
         layer_index = len(self._layers)
 
@@ -58,6 +59,7 @@ class ConvNet(object):
                             padding=padding, stride=stride,
                             neuron_decay=self._neuron_decay,
                             neuron_threshold=self._neuron_threshold,
+                            record_spikes=record_spikes,
                             weights=weights, parent_keyspace=self._keyspace,
                             input_data=(self._test_data if layer_index == 0
                                         else None),
