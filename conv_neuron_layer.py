@@ -32,11 +32,9 @@ class Regions(enum.IntEnum):
 # Vertex
 # ----------------------------------------------------------------------------
 class Vertex(object):
-    def __init__(self, layer_index, vert_index, z_slice, parent_keyspace,
-                 weights):
+    def __init__(self, vert_index, z_slice, parent_keyspace, weights):
         # Build child keyspace
-        self.keyspace = parent_keyspace(layer_index=layer_index,
-                                        vert_index=vert_index)
+        self.keyspace = parent_keyspace(vert_index=vert_index)
 
         # Cache weights
         self.weights = weights
@@ -88,7 +86,7 @@ class ConvNeuronLayer(object):
         "timer_event_overflows",
     )
 
-    def __init__(self, layer_index, output_width, output_height,
+    def __init__(self, start_vert_index, output_width, output_height,
                  padding, stride, weights, neuron_decay, neuron_threshold,
                  parent_keyspace, input_data,
                  vertex_applications, vertex_resources,
@@ -111,7 +109,7 @@ class ConvNeuronLayer(object):
         self.regions[Regions.conv_kernel] =\
             regions.ConvKernel(weights.shape[0], weights.shape[1],
                                weights.shape[2], stride)
-        self.regions[Regions.input] = regions.Input(input_data)
+        self.regions[Regions.input] = regions.Input(input_data, padding)
 
         # Check bias shape
         '''
@@ -157,8 +155,8 @@ class ConvNeuronLayer(object):
                          vert_index, z_slice_start, z_slice_stop)
 
             # Create vertex
-            v = Vertex(layer_index, vert_index, z_slice,
-                            parent_keyspace, weights[:,:,:,z_slice])
+            v = Vertex(vert_index + start_vert_index, z_slice,
+                       parent_keyspace, weights[:,:,:,z_slice])
 
             # Add vertex to list
             self.vertices.append(v)

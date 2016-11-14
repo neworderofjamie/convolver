@@ -29,6 +29,8 @@ class ConvNet(object):
         self._timer_period_us = timer_period_us
         self._sim_ticks = sim_ticks
 
+        self._vert_index = 0
+
         # Create data structures
         self._layers = []
         self._vertex_applications = {}
@@ -36,7 +38,6 @@ class ConvNet(object):
 
         # Create a 32-bit keyspace
         self._keyspace = BitField(32)
-        self._keyspace.add_field("layer_index", tags="routing")
         self._keyspace.add_field("vert_index", tags="routing")
         self._keyspace.add_field("z")
         self._keyspace.add_field("y", length=8, start_at=8)
@@ -51,7 +52,7 @@ class ConvNet(object):
 
         # Add layer to conv net
         self._layers.append(
-            ConvNeuronLayer(layer_index=layer_index,
+            ConvNeuronLayer(start_vert_index=self._vert_index,
                             output_width=output_width,
                             output_height=output_height,
                             padding=padding, stride=stride,
@@ -64,6 +65,9 @@ class ConvNet(object):
                             vertex_resources=self._vertex_resources,
                             timer_period_us=self._timer_period_us,
                             sim_ticks=self._sim_ticks))
+
+        # **YUCK** update vertex index
+        self._vert_index += len(self._layers[-1].vertices)
 
     def run(self, spinnaker_hostname, disable_software_watchdog=False):
         logger.info("Assigning keyspaces")
