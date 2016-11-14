@@ -82,6 +82,7 @@ class ConvNeuronLayer(object):
 
     # Names of statistics
     statistic_names = (
+        "input_buffer_overflows",
         "task_queue_full",
         "timer_event_overflows",
     )
@@ -198,7 +199,7 @@ class ConvNeuronLayer(object):
 
                 # Add kwargs for regions that require them
                 region_arguments[Regions.system].kwargs["application_words"] =\
-                    [z_mask, v.z_slice.start, v.routing_key]
+                    [z_mask, v.z_slice.start, v.routing_key, v.fixed_point_pos]
 
                 # Add neurons region kwargs
                 region_arguments[Regions.neurons].kwargs["output_depth"] =\
