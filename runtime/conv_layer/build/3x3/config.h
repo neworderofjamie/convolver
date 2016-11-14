@@ -13,8 +13,8 @@ namespace ConvLayer
 //-----------------------------------------------------------------------------
 // Typedefines
 //-----------------------------------------------------------------------------
-typedef CircularBuffer<uint32_t, 256> SpikeInputBuffer;
+typedef Common::CircularBuffer<uint32_t, 256> SpikeInputBuffer;
 typedef ConvKernelBase<int8_t, 3> ConvKernel;
-typedef InputBase<int8_t> Input:
+typedef InputBase<int8_t> Input;
 typedef NeuronsBase<int16_t> Neurons;
 }

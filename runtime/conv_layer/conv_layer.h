@@ -23,6 +23,7 @@ enum AppWord
   AppWordZMask,
   AppWordOutputZStart,
   AppWordSpikeKey,
+  AppWordFixedPointPosition,
   AppWordMax,
 };
 
@@ -36,6 +37,7 @@ enum ProfilerTag
 // Indices of statistic words
 enum StatWord
 {
+  StatWordInputBufferOverflows,
   StatWordTaskQueueFull,
   StatWordNumTimerEventOverflows,
   StatWordMax,

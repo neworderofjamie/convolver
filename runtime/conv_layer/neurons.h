@@ -5,6 +5,9 @@
 #include "rig_cpp_common/log.h"
 #include "rig_cpp_common/spinnaker.h"
 
+// Namespaces
+using namespace Common::ARMIntrinsics;
+
 //-----------------------------------------------------------------------------
 // ConvLayer::NeuronsBase
 //-----------------------------------------------------------------------------
@@ -46,7 +49,7 @@ public:
       LOG_PRINT(LOG_LEVEL_INFO, "\tFailed to allocate %u bytes for membrane voltages",
                 membraneVoltageBytes);
 
-      return false
+      return false;
     }
     else
     {
@@ -67,13 +70,17 @@ public:
   void AddInputCurrent(unsigned int x, unsigned int y, unsigned int z,
                        int inputCurrent)
   {
-    const unsigned int n = __smlabb((int32_t)y, (int32_t)m_Width, (int32_t)z);
+    // Calculate neuron index
+    // **NOTE** n = z + depth * (y + (height * x))
+    int32_t n = __smlabb((int32_t)x, (int32_t)m_Height, (int32_t)y);
+    n = __smlabb(n, (int32_t)m_Depth, (int32_t)z);
 
+    // Add input 'current' to it's 'voltage'
     m_MembraneVoltage[n] += inputCurrent;
   }
 
   template<typename E>
-  void Update(E emitSpikeFunc)
+  void Update(E emitSpikeFunc, uint32_t fixedPointPosition)
   {
     // Loop through neuron volume
     // **THINK** might it be better to pad neurons to power of two and
@@ -100,7 +107,7 @@ public:
           {
             // Decay membrane voltage
             neuronMembraneVoltage =  __smulbb(neuronMembraneVoltage, m_Decay);
-            neuronMembraneVoltage >>= fixedPointPosition
+            neuronMembraneVoltage >>= fixedPointPosition;
 
             // Update membrane voltage
             *membraneVoltage++ = neuronMembraneVoltage;

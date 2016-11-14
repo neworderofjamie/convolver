@@ -8,6 +8,9 @@
 #include "rig_cpp_common/log.h"
 #include "rig_cpp_common/spinnaker.h"
 
+// Namespaces
+using namespace Common::ARMIntrinsics;
+
 //--------------------------------------------------------------------------
 // ConvLayer::Input
 //--------------------------------------------------------------------------
@@ -25,10 +28,10 @@ public:
     LOG_PRINT(LOG_LEVEL_INFO, "InputBase::ReadSDRAMData");
 
     // Read input image count
-    m_NumInputImages = *region++;
-    LOG_PRINT(LOG_LEVEL_INFO, "\t%u input images", m_NumInputImages);
+    const unsigned int numInputImages = *region++;
+    LOG_PRINT(LOG_LEVEL_INFO, "\t%u input images", numInputImages);
 
-    if(m_NumInputImages > 0)
+    if(numInputImages > 0)
     {
       // Read fixed point position
       m_FixedPointPosition = *region++;
@@ -61,6 +64,20 @@ public:
 
       // Copy first image into DTCM
       spin1_memcpy(m_Input, region, numBytes);
+
+#if LOG_LEVEL <= LOG_LEVEL_TRACE
+      for(unsigned int y = 0; y < m_Height; y++)
+      {
+        for(unsigned int x = 0; x < m_Width; x++)
+        {
+          auto pixel = GetPixel(x, y);
+          io_printf(IO_BUF, "(%d, %d, %d),",
+                    std::get<0>(pixel), std::get<1>(pixel), std::get<2>(pixel));
+        }
+        io_printf(IO_BUF, "\n");
+      }
+
+#endif
     }
     return true;
   }
@@ -72,11 +89,14 @@ public:
     const unsigned int index_xy = __smlabb((int32_t)y, (int32_t)m_Width,
                                            (int32_t)x);
 
-    // Get pointer to start of RGB
+    // Get pointer to start of the RGB values for this pixel
     const Input *input = &m_Input[3 * index_xy];
 
-    // Read three integers into tuple
-    return std::tuple<int32_t, int32_t, int32_t>(*input++, *input++, *input);
+    // Read off R, G and B values and return in tuple
+    const int32_t r = *input++;
+    const int32_t g = *input++;
+    const int32_t b = *input;
+    return std::make_tuple(r, g, b);
   }
 
   uint32_t GetWidth() const
@@ -98,7 +118,7 @@ public:
   {
     return (m_Input != NULL);
   }
-  
+
 private:
   //--------------------------------------------------------------------------
   // Members
@@ -110,4 +130,5 @@ private:
 
   // 3D image
   Input *m_Input;
-}
+};
+} // ConvLayer

@@ -2,7 +2,6 @@
 
 // Rig CPP common includes
 #include "rig_cpp_common/config.h"
-#include "rig_cpp_common/fixed_point_number.h"
 #include "rig_cpp_common/log.h"
 #include "rig_cpp_common/profiler.h"
 #include "rig_cpp_common/spinnaker.h"
@@ -19,7 +18,6 @@
 
 // Namespaces
 using namespace Common;
-using namespace Common::FixedPointNumber;
 using namespace Common::Utils;
 using namespace ConvLayer;
 
@@ -73,9 +71,9 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
   }
   else
   {
-    LOG_PRINT(LOG_LEVEL_INFO, "\tZ mask:%08x, z start:%u, spike key:%08x",
+    LOG_PRINT(LOG_LEVEL_INFO, "\tZ mask:%08x, z start:%u, spike key:%08x, fixed point position:%u",
       g_AppWords[AppWordZMask], g_AppWords[AppWordOutputZStart],
-      g_AppWords[AppWordSpikeKey]);
+      g_AppWords[AppWordSpikeKey], g_AppWords[AppWordFixedPointPosition]);
   }
 
   // Read conv kernel region
@@ -130,8 +128,8 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
 //-----------------------------------------------------------------------------
 void MCPacketReceived(uint key, uint)
 {
-  LOG_PRINT(LOG_LEVEL_TRACE, "Received spike %x at tick %u, DMA Busy = %u",
-            key, g_Tick, g_DMABusy);
+  LOG_PRINT(LOG_LEVEL_TRACE, "Received spike %x at tick %u, packet pipeline busy = %u",
+            key, g_Tick, g_PacketPipelineBusy);
 
   // If there was space to add spike to incoming spike queue
   if(g_SpikeInputBuffer.Push(key))
@@ -241,7 +239,7 @@ void TimerTick(uint tick, uint)
         };
 
       // Convolve input image pixels, read using lambda function with kernel
-      g_ConvKernel.ConvolveImage(g_Input.GetWidth(), g_Input.GetHeight(), g_Input.GetFixedPoint(),
+      g_ConvKernel.ConvolveImage(g_Input.GetWidth(), g_Input.GetHeight(), g_Input.GetFixedPointPosition(),
         applyInput, getPixel);
     }
 
@@ -264,7 +262,7 @@ void TimerTick(uint tick, uint)
       };
 
     // Update neural state using lambda function to emit spikes
-    g_Neurons.Update(emitSpike);
+    g_Neurons.Update(emitSpike, g_AppWords[AppWordFixedPointPosition]);
   }
 }
 } // Anonymous namespace

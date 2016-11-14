@@ -6,6 +6,9 @@
 // Rig CPP common includes
 #include "rig_cpp_common/arm_intrinsics.h"
 
+// Namespaces
+using namespace Common::ARMIntrinsics;
+
 //--------------------------------------------------------------------------
 // ConvLayer::ConvKernelBase
 //--------------------------------------------------------------------------
@@ -45,7 +48,7 @@ public:
 
     // Loop through kernels
     uint8_t *kernelRegion = reinterpret_cast<uint8_t*>(region);
-    const unsigned int kernelBytes = KernelSize * KernelSize * kernelDepth * sizeof(Weigth);
+    const unsigned int kernelBytes = KernelSize * KernelSize * kernelDepth * sizeof(Weight);
     for(unsigned int k = 0; k < m_NumKernels; k++)
     {
       // Allocate kernel
@@ -74,9 +77,9 @@ public:
 
     // Loop through kernel pixels
     // **TODO** stride
-    for(int xKernel = 0; xKernel < KernelSize; xKernel++)
+    for(int xKernel = 0; xKernel < (int)KernelSize; xKernel++)
     {
-      for(int yKernel = 0; yKernel < KernelSize; yKernel++)
+      for(int yKernel = 0; yKernel < (int)KernelSize; yKernel++)
       {
         // Calculate offset into kernel for this pixel
         const unsigned int kernelIndex = xKernel + (KernelSize * (yKernel + zStride));
@@ -98,7 +101,7 @@ public:
   }
 
   // Convolve a (padded) input image with the convolution kernel
-  template<typename A>
+  template<typename A, typename I>
   void ConvolveImage(unsigned int imageWidth, unsigned int imageHeight,
                     unsigned int fixedPoint, A applyFunc, I getPixelFunc)
   {
@@ -123,9 +126,9 @@ public:
               auto imagePixel = getPixelFunc(imageX + kernelX, imageY + kernelY);
 
               // Read three colour components from image
-              const int32_t kernelR = kernel[xKernel + (KernelSize * (yKernel + (0 * KernelSize)))];
-              const int32_t kernelG = kernel[xKernel + (KernelSize * (yKernel + (1 * KernelSize)))];
-              const int32_t kernelB = kernel[xKernel + (KernelSize * (yKernel + (2 * KernelSize)))];
+              const int32_t kernelR = kernel[kernelX + (KernelSize * (kernelY + (0 * KernelSize)))];
+              const int32_t kernelG = kernel[kernelX + (KernelSize * (kernelY + (1 * KernelSize)))];
+              const int32_t kernelB = kernel[kernelX + (KernelSize * (kernelY + (2 * KernelSize)))];
 
               // Convolve kernel with image
               value = __smlabb(std::get<0>(imagePixel), kernelR, value);
