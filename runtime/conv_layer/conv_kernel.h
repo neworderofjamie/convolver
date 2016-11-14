@@ -1,5 +1,11 @@
 #pragma once
 
+// Standard includes
+#include <tuple>
+
+// Rig CPP common includes
+#include "rig_cpp_common/arm_intrinsics.h"
+
 //--------------------------------------------------------------------------
 // ConvLayer::ConvKernelBase
 //--------------------------------------------------------------------------
@@ -20,20 +26,61 @@ public:
   //--------------------------------------------------------------------------
   bool ReadSDRAMData(uint32_t *region, uint32_t)
   {
+    LOG_PRINT(LOG_LEVEL_INFO, "ConvKernelBase::ReadSDRAMData");
 
+    m_NumKernels = *region++;
+    const uint32_t kernelDepth = *region++;
+
+    LOG_PRINT(LOG_LEVEL_INFO, "\tNum kernels:%u, kernel size:%u, kernel depth:%u",
+      m_NumKernels, KernelSize, kernelDepth);
+
+    // Allocate array to hold kernels
+    const unsigned int kernelArrayBytes = m_NumKernels * sizeof(Weight*);
+    m_KernelWeights = (Weight**)spin1_malloc(kernelArrayBytes);
+    if(m_KernelWeights == NULL)
+    {
+      LOG_PRINT(LOG_LEVEL_ERROR, "Cannot allocate %u byte array for kernels", kernelArrayBytes);
+      return false;
+    }
+
+    // Loop through kernels
+    uint8_t *kernelRegion = reinterpret_cast<uint8_t*>(region);
+    const unsigned int kernelBytes = KernelSize * KernelSize * kernelDepth * sizeof(Weigth);
+    for(unsigned int k = 0; k < m_NumKernels; k++)
+    {
+      // Allocate kernel
+      m_KernelWeights[k] = (Weight*)spin1_malloc(kernelBytes);
+      if(m_KernelWeights[k] == NULL)
+      {
+        LOG_PRINT(LOG_LEVEL_ERROR, "Cannot allocate %u bytes for kernel %u",
+          kernelBytes, k);
+
+        return false;
+      }
+
+      // Copy kernel into DTCM
+      spin1_memcpy(m_KernelWeights[k], kernelRegion, kernelBytes);
+      kernelRegion += kernelBytes;
+    }
+
+    return true;
   }
 
   template<typename A>
   void ConvolveSpike(int xIn, int yIn, int zIn,
     A applyFunc) const
   {
-    // Get stack of 2D kernels to apply to inputs
-    // from zIn for each output dimension
-    const Weight ***zWeights = m_KernelWeights[zIn];
+    const unsigned zStride = zIn * KernelSize;
+
+    // Loop through kernel pixels
+    // **TODO** stride
     for(int xKernel = 0; xKernel < KernelSize; xKernel++)
     {
       for(int yKernel = 0; yKernel < KernelSize; yKernel++)
       {
+        // Calculate offset into kernel for this pixel
+        const unsigned int kernelIndex = xKernel + (KernelSize * (yKernel + zStride));
+
         // Calculate corresponding output pixel
         const int xNeuron = xIn - xKernel + 1;
         const int yNeuron = yIn - yKernel + 1;
@@ -41,7 +88,10 @@ public:
         // Loop through kernels and apply
         for(unsigned int k = 0; k < m_NumKernels; k++)
         {
-          applyFunc(xNeuron, yNeuron, k, zWeights[yKernel][xKernel][k]]);
+          // Get current kernel
+          const Weight *kernel = m_KernelWeights[k];
+
+          applyFunc(xNeuron, yNeuron, k, kernel[kernelIndex]);
         }
       }
     }
@@ -49,8 +99,8 @@ public:
 
   // Convolve a (padded) input image with the convolution kernel
   template<typename A>
-  void ConvolveImage(const int8_t ***image, unsigned int imageWidth, unsigned int imageHeight,
-                    unsigned int fixedPoint, A applyFunc)
+  void ConvolveImage(unsigned int imageWidth, unsigned int imageHeight,
+                    unsigned int fixedPoint, A applyFunc, I getPixelFunc)
   {
     // Stride through image pixels
     for(unsigned int imageX = 0; imageX < (imageWidth - KernelSize); imageX += m_Stride)
@@ -60,26 +110,27 @@ public:
         // Loop through kernels
         for(unsigned int k = 0; k < m_NumKernels; k++)
         {
+          // Get current kernel
+          const Weight *kernel = m_KernelWeights[k];
+
           // Loop through kernel pixels
           int32_t value = 0;
           for(unsigned int kernelX = 0; kernelX < KernelSize; kernelX++)
           {
             for(unsigned int kernelY = 0; kernelY < KernelSize; kernelY++)
             {
-              // Read three colour components from image
-              const int32_t imageR = image[imageX + kernelX][imageY + kernelY][0];
-              const int32_t imageG = image[imageX + kernelX][imageY + kernelY][1];
-              const int32_t imageB = image[imageX + kernelX][imageY + kernelY][2];
+              // Get image pixel
+              auto imagePixel = getPixelFunc(imageX + kernelX, imageY + kernelY);
 
               // Read three colour components from image
-              const int32_t kernelR = m_KernelWeights[0][kernelY][kernelX][k];
-              const int32_t kernelG = m_KernelWeights[1][kernelY][kernelX][k];
-              const int32_t kernelB = m_KernelWeights[2][kernelY][kernelX][k];
+              const int32_t kernelR = kernel[xKernel + (KernelSize * (yKernel + (0 * KernelSize)))];
+              const int32_t kernelG = kernel[xKernel + (KernelSize * (yKernel + (1 * KernelSize)))];
+              const int32_t kernelB = kernel[xKernel + (KernelSize * (yKernel + (2 * KernelSize)))];
 
               // Convolve kernel with image
-              value = __smlabb(imageR, kernelR, value);
-              value = __smlabb(imageG, kernelG, value);
-              value = __smlabb(imageB, kernelB, value);
+              value = __smlabb(std::get<0>(imagePixel), kernelR, value);
+              value = __smlabb(std::get<1>(imagePixel), kernelG, value);
+              value = __smlabb(std::get<2>(imagePixel), kernelB, value);
             }
           }
 
@@ -93,16 +144,17 @@ public:
     }
   }
 
-private:
+
+
   //--------------------------------------------------------------------------
   // Members
   //--------------------------------------------------------------------------
   unsigned int m_Stride;
 
-  // Number of kernels and array of 2D kernel weight
+  // Number of kernels
   unsigned int m_NumKernels;
 
-  // 4D array kernel z, kernel y, kernel x, output dimension
-  Weight ****m_KernelWeights;
+  // Array of 3D kernels
+  Weight **m_KernelWeights;
 };
 } // ConvLayer

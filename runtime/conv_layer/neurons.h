@@ -1,5 +1,10 @@
 #pragma once
 
+// Rig CPP common includes
+#include "rig_cpp_common/arm_intrinsics.h"
+#include "rig_cpp_common/log.h"
+#include "rig_cpp_common/spinnaker.h"
+
 //-----------------------------------------------------------------------------
 // ConvLayer::NeuronsBase
 //-----------------------------------------------------------------------------
@@ -16,10 +21,9 @@ public:
   //-----------------------------------------------------------------------------
   // Public API
   //-----------------------------------------------------------------------------
-  bool ReadSDRAMData(uint32_t *region, uint32_t,
-                     unsigned int width, unsigned int height, unsigned int depth)
+  bool ReadSDRAMData(uint32_t *region, uint32_t)
   {
-    LOG_PRINT(LOG_LEVEL_INFO, "Neuron::ReadSDRAMData");
+    LOG_PRINT(LOG_LEVEL_INFO, "NeuronsBase::ReadSDRAMData");
 
     // Read neuron slice dimensions
     m_Width = *region++;
@@ -63,7 +67,7 @@ public:
   void AddInputCurrent(unsigned int x, unsigned int y, unsigned int z,
                        int inputCurrent)
   {
-    const unsigned int n = (y * m_Width) + z
+    const unsigned int n = __smlabb((int32_t)y, (int32_t)m_Width, (int32_t)z);
 
     m_MembraneVoltage[n] += inputCurrent;
   }

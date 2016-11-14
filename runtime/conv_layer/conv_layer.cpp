@@ -14,12 +14,14 @@
 #include "input.h"
 #include "neurons.h"
 
+// Configuration include
+#include "config.h"
+
 // Namespaces
 using namespace Common;
 using namespace Common::FixedPointNumber;
 using namespace Common::Utils;
 using namespace ConvLayer;
-
 
 //-----------------------------------------------------------------------------
 // Anonymous namespace
@@ -39,10 +41,11 @@ enum DMATag
 //----------------------------------------------------------------------------
 Config g_Config;
 SpikeInputBuffer g_SpikeInputBuffer;
-SpikeRecording g_SpikeRecording;
+//SpikeRecording g_SpikeRecording;
 Statistics<StatWordMax> g_Statistics;
 ConvKernel g_ConvKernel;
 Neurons g_Neurons;
+Input g_Input;
 
 uint32_t g_AppWords[AppWordMax];
 
@@ -85,6 +88,13 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
   // Read conv kernel region
   if(!g_ConvKernel.ReadSDRAMData(
     Config::GetRegionStart(baseAddress, RegionConvKernel), flags))
+  {
+    return false;
+  }
+
+  // Read input region
+  if(!g_Input.ReadSDRAMData(
+    Config::GetRegionStart(baseAddress, RegionInput), flags))
   {
     return false;
   }
@@ -140,7 +150,7 @@ void MCPacketReceived(uint key, uint)
   }
 }
 //-----------------------------------------------------------------------------
-void DMATransferDone(uint, uint tag)
+/*void DMATransferDone(uint, uint tag)
 {
   LOG_PRINT(LOG_LEVEL_TRACE, "DMA transfer done tag:%u", tag);
 
@@ -152,7 +162,7 @@ void DMATransferDone(uint, uint tag)
   {
     LOG_PRINT(LOG_LEVEL_ERROR, "Dma transfer done with unknown tag %u", tag);
   }
-}
+}*/
 //-----------------------------------------------------------------------------
 void UserEvent(uint, uint)
 {
@@ -212,6 +222,29 @@ void TimerTick(uint tick, uint)
   {
     LOG_PRINT(LOG_LEVEL_TRACE, "Timer tick %u", g_Tick);
 
+    // If this vertex has any input to apply
+    if(g_Input.HasInput())
+    {
+      // Lambda function to read input pixels
+      auto getPixel =
+        [](unsigned int x, unsigned int y)
+        {
+          return g_Input.GetPixel(x, y);
+        };
+
+      // Lambda function to add input current to neurons
+      auto applyInput =
+        [](unsigned int xNeuron, unsigned int yNeuron, unsigned int zNeuron,
+          int input)
+        {
+          g_Neurons.AddInputCurrent(xNeuron, yNeuron, zNeuron, input);
+        };
+
+      // Convolve input image pixels, read using lambda function with kernel
+      g_ConvKernel.ConvolveImage(g_Input.GetWidth(), g_Input.GetHeight(), g_Input.GetFixedPoint(),
+        applyInput, getPixel);
+    }
+
     // Lambda function to emit spike from specified neuron
     auto emitSpike =
       [](unsigned int x, unsigned int y, unsigned int z)
@@ -221,7 +254,7 @@ void TimerTick(uint tick, uint)
         const uint32_t n = (zOut  << 16) | (y << 8) | x;
 
         // Record spike
-        g_SpikeRecording.RecordSpike(n);
+        //g_SpikeRecording.RecordSpike(n);
 
         // Send spike
         while(!spin1_send_mc_packet(g_AppWords[AppWordSpikeKey] | n, 0, NO_PAYLOAD))
@@ -257,7 +290,7 @@ extern "C" void c_main()
 
   // Register callbacks
   spin1_callback_on(MC_PACKET_RECEIVED, MCPacketReceived, -1);
-  spin1_callback_on(DMA_TRANSFER_DONE,  DMATransferDone,   0);
+  //spin1_callback_on(DMA_TRANSFER_DONE,  DMATransferDone,   0);
   spin1_callback_on(USER_EVENT,         UserEvent,         0);
   spin1_callback_on(TIMER_TICK,         TimerTick,         2);
 
