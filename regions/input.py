@@ -17,7 +17,7 @@ class Input(Region):
     # How many bytes are used to represent each input component
     InputBytes = 1
 
-    def __init__(self, input_data):
+    def __init__(self, input_data, pad):
         """Create a new input region.
 
         Parameters
@@ -25,11 +25,9 @@ class Input(Region):
         input_data : ndarray
             array of input data
         """
-        self.input_data = input_data
-
-        if self.input_data is not None:
+        if input_data is not None:
             # Calculate maximum absolute weight
-            max_input = np.amax(np.fabs(self.input_data))
+            max_input = np.amax(np.fabs(input_data))
 
             # Get MSB for maximum weight
             max_msb = np.floor(np.log2(max_input)) + 1
@@ -37,8 +35,21 @@ class Input(Region):
             # Calculate where the weight format fixed-point lies
             self.fixed_point_pos = (7 - int(max_msb))
 
-            logger.debug("\t\tInput fixed-point position:%d, data channels:%u, width:%u, height:%u",
+            # Re-order the input data so it's axis are x, y, z
+            input_data = np.rollaxis(input_data, 0, 3)
+
+            # Pad input data
+            two_pad = 2 * pad
+            self.input_data = np.zeros((input_data.shape[0] + two_pad,
+                                        input_data.shape[1] + two_pad,
+                                        input_data.shape[2]),
+                                       dtype=input_data.dtype)
+            self.input_data[pad:-pad,pad:-pad,:] = input_data
+
+            logger.debug("\t\tInput fixed-point position:%d, width:%u, height:%u, depth:%u",
                         self.fixed_point_pos, *self.input_data.shape)
+        else:
+            self.input_data = None
 
     # --------------------------------------------------------------------------
     # Region methods
@@ -75,7 +86,7 @@ class Input(Region):
         # Otherwise
         else:
             # Write header
-            fp.write(struct.pack("4I", 1, *self.input_data.shape))
+            fp.write(struct.pack("5I", 1, self.fixed_point_pos, *self.input_data.shape))
 
             # Write input data
             convert = NumpyFloatToFixConverter(signed=True, n_bits=8,
