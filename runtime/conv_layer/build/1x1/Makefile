@@ -1,9 +1,7 @@
-PYNN_APP = neuron_if_cond_exp
+CONVOLVER_APP = convolution_neuron_1x1
 
 # Build object list
-PYNN_SOURCES = ../../neuron_processor.cpp \
-	../../neuron_models/if_cond.cpp \
-	../../synapse_models/exp.cpp
+CONVOLVER_SOURCES = ../../conv_layer.cpp
 
 RIG_CPP_COMMON_SOURCES = rig_cpp_common/config.cpp \
 	rig_cpp_common/bit_field.cpp \
