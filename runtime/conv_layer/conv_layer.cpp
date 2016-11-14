@@ -31,7 +31,7 @@ namespace
 //----------------------------------------------------------------------------
 enum DMATag
 {
-  DMATagInputRead,
+  DMATagSpikeRecordingWrite,
 };
 
 //----------------------------------------------------------------------------
@@ -39,7 +39,6 @@ enum DMATag
 //----------------------------------------------------------------------------
 Config g_Config;
 SpikeInputBuffer g_SpikeInputBuffer;
-//SpikeRecording g_SpikeRecording;
 Statistics<StatWordMax> g_Statistics;
 ConvKernel g_ConvKernel;
 Neurons g_Neurons;
@@ -97,14 +96,6 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
     return false;
   }
 
-  // Read spike recording region
-  /*if(!g_SpikeRecording.ReadSDRAMData(
-    Config::GetRegionStart(baseAddress, RegionSpikeRecording), flags,
-    g_AppWords[AppWordNumNeurons]))
-  {
-    return false;
-  }
-
   // Read profiler region
   if(!Profiler::ReadSDRAMData(
     Config::GetRegionStart(baseAddress, RegionProfiler),
@@ -118,7 +109,7 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
     flags))
   {
     return false;
-  }*/
+  }
 
   return true;
 }
@@ -148,19 +139,20 @@ void MCPacketReceived(uint key, uint)
   }
 }
 //-----------------------------------------------------------------------------
-/*void DMATransferDone(uint, uint tag)
+void DMATransferDone(uint, uint tag)
 {
   LOG_PRINT(LOG_LEVEL_TRACE, "DMA transfer done tag:%u", tag);
 
-  if(tag == DMATagInputRead)
+  // If recording write back is complete, reset recording for next timestep
+  if(tag == DMATagSpikeRecordingWrite)
   {
-
+    g_Neurons.ResetRecording();
   }
   else
   {
-    LOG_PRINT(LOG_LEVEL_ERROR, "Dma transfer done with unknown tag %u", tag);
+    LOG_PRINT(LOG_LEVEL_ERROR, "DMA transfer done with unknown tag %u", tag);
   }
-}*/
+}
 //-----------------------------------------------------------------------------
 void UserEvent(uint, uint)
 {
@@ -251,9 +243,6 @@ void TimerTick(uint tick, uint)
         const unsigned int zOut = g_AppWords[AppWordOutputZStart] + z;
         const uint32_t n = (zOut  << 16) | (y << 8) | x;
 
-        // Record spike
-        //g_SpikeRecording.RecordSpike(n);
-
         // Send spike
         while(!spin1_send_mc_packet(g_AppWords[AppWordSpikeKey] | n, 0, NO_PAYLOAD))
         {
@@ -263,6 +252,9 @@ void TimerTick(uint tick, uint)
 
     // Update neural state using lambda function to emit spikes
     g_Neurons.Update(emitSpike, g_AppWords[AppWordFixedPointPosition]);
+
+    // Write spike recording data to SDRAM
+    g_Neurons.TransferBuffer(DMATagSpikeRecordingWrite);
   }
 }
 } // Anonymous namespace
@@ -288,7 +280,7 @@ extern "C" void c_main()
 
   // Register callbacks
   spin1_callback_on(MC_PACKET_RECEIVED, MCPacketReceived, -1);
-  //spin1_callback_on(DMA_TRANSFER_DONE,  DMATransferDone,   0);
+  spin1_callback_on(DMA_TRANSFER_DONE,  DMATransferDone,   0);
   spin1_callback_on(USER_EVENT,         UserEvent,         0);
   spin1_callback_on(TIMER_TICK,         TimerTick,         2);
 

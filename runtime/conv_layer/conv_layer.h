@@ -12,7 +12,6 @@ enum Region
   RegionNeurons,
   RegionConvKernel,
   RegionInput,
-  RegionSpikeRecording,
   RegionProfiler,
   RegionStatistics,
 };

@@ -2,10 +2,12 @@
 
 // Rig CPP common includes
 #include "rig_cpp_common/arm_intrinsics.h"
+#include "rig_cpp_common/bit_field.h"
 #include "rig_cpp_common/log.h"
 #include "rig_cpp_common/spinnaker.h"
 
 // Namespaces
+using namespace Common;
 using namespace Common::ARMIntrinsics;
 
 //-----------------------------------------------------------------------------
@@ -35,6 +37,9 @@ public:
     LOG_PRINT(LOG_LEVEL_INFO, "\tWidth:%u, height:%u, depth:%u",
               m_Width, m_Height, m_Depth);
 
+    // Read recording flag
+    const bool record = (*region++ != 0);
+
     m_ThresholdVoltage = *reinterpret_cast<int32_t*>(region++);
     m_Decay = *reinterpret_cast<int32_t*>(region++);
     LOG_PRINT(LOG_LEVEL_INFO, "\tDecay:%d, threshold:%d",
@@ -62,6 +67,36 @@ public:
       {
         *membraneVoltage++ = 0;
       }
+    }
+
+    // If recording is enabled
+    if(record)
+    {
+      // Cache pointer to rest of region to use for recording
+      m_RecordingSDRAM = region;
+
+      // Calculate number of recording words
+      m_NumRecordingWords = BitField::GetWordSize(numNeurons);
+      LOG_PRINT(LOG_LEVEL_INFO, "\tRecording using %u word bitfield",
+                m_NumRecordingWords);
+
+      // Allocate recording buffer
+      m_RecordingBuffer = (uint32_t*)spin1_malloc(m_NumRecordingWords * sizeof(uint32_t));
+      if(m_RecordingBuffer == NULL)
+      {
+        LOG_PRINT(LOG_LEVEL_ERROR, "Unable to allocate local record buffer");
+        return false;
+      }
+
+      // Zero recording buffer
+      ResetRecording();
+    }
+    // Otherwise NULL all recording structures
+    else
+    {
+      m_NumRecordingWords = 0;
+      m_RecordingSDRAM = NULL;
+      m_RecordingBuffer = NULL;
     }
 
     return true;
@@ -100,6 +135,12 @@ public:
             // Emit spike
             emitSpikeFunc(x, y, z);
 
+            // If we're recording, set appropriate bit
+            if(m_RecordingBuffer != NULL)
+            {
+              BitField::SetBit(m_RecordingBuffer, membraneVoltage - m_MembraneVoltage);
+            }
+
             // Reset membrane voltage
             *membraneVoltage++ = 0;
           }
@@ -112,8 +153,39 @@ public:
             // Update membrane voltage
             *membraneVoltage++ = neuronMembraneVoltage;
           }
+
+
         }
       }
+    }
+  }
+
+  void ResetRecording()
+  {
+    if(m_RecordingBuffer != NULL)
+    {
+      BitField::Clear(m_RecordingBuffer, m_NumRecordingWords);
+    }
+  }
+
+  void TransferBuffer(uint tag)
+  {
+    LOG_PRINT(LOG_LEVEL_TRACE, "\tTransferring record buffer to SDRAM:%08x",
+      m_RecordingSDRAM);
+#if LOG_LEVEL <= LOG_LEVEL_TRACE
+    BitField::PrintBits(IO_BUF, m_RecordingBuffer, m_NumRecordingWords);
+    io_printf(IO_BUF, "\n");
+#endif
+
+    // Use DMA to transfer record buffer to SDRAM
+    if(m_NumRecordingWords > 0)
+    {
+      spin1_dma_transfer(tag, m_RecordingSDRAM,
+                         m_RecordingBuffer, DMA_WRITE,
+                         m_NumRecordingWords * sizeof(uint32_t));
+
+      // Advance SDRAM pointer
+      m_RecordingSDRAM += m_NumRecordingWords;
     }
   }
 
@@ -132,5 +204,9 @@ private:
   uint32_t m_Width;
   uint32_t m_Height;
   uint32_t m_Depth;
+
+  uint32_t m_NumRecordingWords;
+  uint32_t *m_RecordingBuffer;
+  uint32_t *m_RecordingSDRAM;
 };
 } // ConvLayer

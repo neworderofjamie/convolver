@@ -17,7 +17,7 @@ class Neurons(Region):
     # How many bytes does the state of each neuron require
     StateBytes = 2
 
-    def __init__(self, output_width, output_height, decay, threshold):
+    def __init__(self, output_width, output_height, decay, threshold, record):
         """Create a new neurons region.
 
         Parameters
@@ -31,6 +31,7 @@ class Neurons(Region):
         self.output_height = output_height
         self.decay = decay
         self.threshold = threshold
+        self.record = record
 
         logger.debug("\t\tOutput width:%u, output height:%u, neuron decay:%f, neuron threshold:%f",
                      self.output_width, self.output_height,
@@ -53,7 +54,7 @@ class Neurons(Region):
             The number of bytes required to store the data in the given slice
             of the region.
         """
-        return (5 * 4)
+        return (6 * 4)
 
     def write_subregion_to_file(self, fp, output_depth, fixed_point_pos):
         """Write a portion of the region to a file applying the formatter.
@@ -70,8 +71,8 @@ class Neurons(Region):
         convert = float_to_fp(signed=True, n_bits=32, n_frac=fixed_point_pos)
 
         # Write structure
-        fp.write(struct.pack("3I2i", self.output_width, self.output_height,
-                             output_depth, convert(self.threshold),
+        fp.write(struct.pack("4I2i", self.output_width, self.output_height,
+                             output_depth, self.record, convert(self.threshold),
                              convert(self.decay)))
 
     # --------------------------------------------------------------------------
