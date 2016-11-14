@@ -156,6 +156,8 @@ void DMATransferDone(uint, uint tag)
 //-----------------------------------------------------------------------------
 void UserEvent(uint, uint)
 {
+  LOG_PRINT(LOG_LEVEL_TRACE, "User event");
+
   // Lambda function to add input current to neurons
   auto applyInput =
     [](unsigned int xNeuron, unsigned int yNeuron, unsigned int zNeuron,
@@ -173,6 +175,9 @@ void UserEvent(uint, uint)
     const unsigned int xIn = (spikeKey & 0xFF);
     const unsigned int yIn = (spikeKey >> 8) & 0xFF;
     const unsigned int zIn = (spikeKey >> 16) & g_AppWords[AppWordZMask];
+
+    LOG_PRINT(LOG_LEVEL_TRACE, "\tConvolving spike:%08x (%u, %u, %u)",
+              spikeKey, xIn, yIn, zIn);
 
     // Convolve spike with convolution kernel
     g_ConvKernel.ConvolveSpike(xIn, yIn, zIn, applyInput);
@@ -230,6 +235,8 @@ void TimerTick(uint tick, uint)
           g_Neurons.AddInputCurrent(xNeuron, yNeuron, zNeuron, input);
         };
 
+      LOG_PRINT(LOG_LEVEL_TRACE, "\tConvolving input image");
+
       // Convolve input image pixels, read using lambda function with kernel
       g_ConvKernel.ConvolveImage(g_Input.GetWidth(), g_Input.GetHeight(), g_Input.GetFixedPointPosition(),
         applyInput, getPixel);
@@ -249,6 +256,8 @@ void TimerTick(uint tick, uint)
           spin1_delay_us(1);
         }
       };
+
+    LOG_PRINT(LOG_LEVEL_TRACE, "\tUpdating neurons");
 
     // Update neural state using lambda function to emit spikes
     g_Neurons.Update(emitSpike, g_AppWords[AppWordFixedPointPosition]);
