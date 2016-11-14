@@ -57,7 +57,7 @@ class ConvKernel(Region):
             of the region.
         """
         #
-        return 8 + (weights.shape[3] * self.kernel_dtcm_bytes)
+        return 12 + (weights.shape[3] * self.kernel_dtcm_bytes)
 
     def write_subregion_to_file(self, fp, weights, fixed_point_pos):
         """Write a portion of the region to a file applying the formatter.
@@ -73,7 +73,7 @@ class ConvKernel(Region):
         """
         # Write structure containing the number of kernels on the core
         # and the depth of each one (width and height are compile-time)
-        fp.write(struct.pack("2I", weights.shape[3], weights.shape[2]))
+        fp.write(struct.pack("3I", self.stride, weights.shape[3], weights.shape[2]))
 
          # Write kernel data
         convert = NumpyFloatToFixConverter(signed=True, n_bits=8,

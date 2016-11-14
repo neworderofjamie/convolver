@@ -31,11 +31,12 @@ public:
   {
     LOG_PRINT(LOG_LEVEL_INFO, "ConvKernelBase::ReadSDRAMData");
 
+    m_Stride = *region++;
     m_NumKernels = *region++;
     const uint32_t kernelDepth = *region++;
 
-    LOG_PRINT(LOG_LEVEL_INFO, "\tNum kernels:%u, kernel size:%u, kernel depth:%u",
-      m_NumKernels, KernelSize, kernelDepth);
+    LOG_PRINT(LOG_LEVEL_INFO, "\tStride:%u, num kernels:%u, kernel size:%u, kernel depth:%u",
+      m_Stride, m_NumKernels, KernelSize, kernelDepth);
 
     // Allocate array to hold kernels
     const unsigned int kernelArrayBytes = m_NumKernels * sizeof(Weight*);
