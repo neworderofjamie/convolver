@@ -136,7 +136,8 @@ class ConvNet(object):
             z_mask = (1 << z_length) - 1
             logger.debug("Z length:%u, mask:%08x", z_length, z_mask)
 
-            for l in self._layers:
+            for i, l in enumerate(self._layers):
+                logger.info("\tLayer %u", i)
                 l.load(placements, allocations, machine_controller, z_mask)
 
             # Load routing tables and applications
