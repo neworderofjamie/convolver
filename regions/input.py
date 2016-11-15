@@ -68,7 +68,7 @@ class Input(Region):
             return 4
         # Otherwise, count, num channels, width, height and image data
         else:
-            return 16 + self.dtcm_bytes
+            return 20 + self.dtcm_bytes
 
 
     def write_subregion_to_file(self, fp):
