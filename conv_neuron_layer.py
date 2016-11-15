@@ -138,7 +138,7 @@ class ConvNeuronLayer(object):
                      neuron_bytes, kernel_bytes, input_bytes, total_bytes)
 
         # Calculate how many of these kernels can fit on each core
-        num_kernels_per_core = (64 * 1024) // total_bytes
+        num_kernels_per_core = (55 * 1024) // total_bytes
         logger.debug("\t\t%u kernels per core", num_kernels_per_core)
 
         kernel_width = self.regions[Regions.conv_kernel].kernel_width
