@@ -3,6 +3,7 @@ import itertools
 import logging
 import numpy as np
 from rig import machine
+from rig_cpp_common import profiling
 import time
 
 # Import classes
@@ -23,13 +24,14 @@ logger = logging.getLogger("convolver")
 # ----------------------------------------------------------------------------
 class ConvNet(object):
     def __init__(self, neuron_threshold, neuron_decay, test_data,
-                 timer_period_us=20000, sim_ticks=200):
+                 timer_period_us=20000, sim_ticks=200, num_profile_samples=None):
         # Cache network parameters
         self._neuron_threshold = neuron_threshold
         self._neuron_decay = neuron_decay
         self._test_data = test_data
         self._timer_period_us = timer_period_us
         self._sim_ticks = sim_ticks
+        self._num_profile_samples = num_profile_samples
 
         self._vert_index = 0
 
@@ -41,7 +43,7 @@ class ConvNet(object):
         # Create a 32-bit keyspace
         self._keyspace = BitField(32)
         self._keyspace.add_field("vert_index", tags="routing")
-        self._keyspace.add_field("z")
+        self._keyspace.add_field("z", start_at=16)
         self._keyspace.add_field("y", length=8, start_at=8)
         self._keyspace.add_field("x", length=8, start_at=0)
 
@@ -68,7 +70,8 @@ class ConvNet(object):
                             vertex_applications=self._vertex_applications,
                             vertex_resources=self._vertex_resources,
                             timer_period_us=self._timer_period_us,
-                            sim_ticks=self._sim_ticks))
+                            sim_ticks=self._sim_ticks,
+                            num_profile_samples=self._num_profile_samples))
 
         # **YUCK** update vertex index
         self._vert_index += len(self._layers[-1].vertices)
@@ -79,9 +82,14 @@ class ConvNet(object):
         # Finalise keyspace fields
         self._keyspace.assign_fields()
 
-        logger.info("Building nets")
+        # Extract position and length of z-field in keyspace
+        z_loc, z_length = self._keyspace.get_location_and_length("z")
+        z_mask = (1 << z_length) - 1
+        logger.debug("Z location:%u, length:%u, mask:%08x",
+                        z_loc, z_length, z_mask)
 
         # Loop through layers and their successors
+        logger.info("Building nets")
         nets = []
         net_keys = {}
         for layer, next_layer in zip(self._layers[:-1], self._layers[1:]):
@@ -132,10 +140,6 @@ class ConvNet(object):
                                                     wdog, x, y)
 
             logger.info("Loading layers")
-            z_length = self._keyspace.get_location_and_length("z")[1]
-            z_mask = (1 << z_length) - 1
-            logger.debug("Z length:%u, mask:%08x", z_length, z_mask)
-
             for i, l in enumerate(self._layers):
                 logger.info("\tLayer %u", i)
                 l.load(placements, allocations, machine_controller, z_mask)
@@ -169,11 +173,7 @@ class ConvNet(object):
                                       AppState.run, AppState.exit,
                                       num_verts)
 
-            # Save off layer data
-            for i, l in enumerate(self._layers):
-                spikes = l.read_recorded_spikes()
-                np.save("layer_%u.npy" % i, spikes)
-
+            logger.info("Reading stats")
             for i, l in enumerate(self._layers):
                 stats = l.read_statistics()
                 logger.info("\tLayer %u", i)
@@ -183,6 +183,30 @@ class ConvNet(object):
                             np.sum(stats["task_queue_full"]))
                 logger.info("\t\tTimer event overruns:%u",
                             np.sum(stats["timer_event_overflows"]))
+                logger.info("\t\tSpikes emitted:%u",
+                            np.sum(stats["spikes_emitted"]))
+                logger.info("\t\tSpikes convolved:%u",
+                            np.sum(stats["spikes_convolved"]))
+
+            if self._num_profile_samples is not None:
+                logger.info("Reading profiling data")
+
+                timestep_ms = self._timer_period_us / 1000.0
+                duration_ms = timestep_ms * self._sim_ticks
+
+                for i, l in enumerate(self._layers):
+                    profiling_data = l.read_profile()[0][1]
+                    logger.info("\tLayer %u", i)
+                    #print profiling_data
+                    profiling.print_summary(profiling_data, duration_ms,
+                                            timestep_ms)
+
+
+            #logger.info("Downloading spikes")
+            # Save off layer data
+            for i, l in enumerate(self._layers):
+                spikes = l.read_recorded_spikes()
+                np.save("layer_%u.npy" % i, spikes)
 
         finally:
             if machine_controller is not None:

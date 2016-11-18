@@ -64,7 +64,7 @@ class Vertex(object):
 
     @property
     def routing_mask(self):
-        return self.keyspace.get_value(tag="routing")
+        return self.keyspace.get_mask(tag="routing")
 
 # ----------------------------------------------------------------------------
 # ConvNeuronLayer
@@ -84,13 +84,15 @@ class ConvNeuronLayer(object):
         "input_buffer_overflows",
         "task_queue_full",
         "timer_event_overflows",
+        "spikes_emitted",
+        "spikes_convolved",
     )
 
     def __init__(self, start_vert_index, output_width, output_height,
                  padding, stride, weights, neuron_decay, neuron_threshold,
                  record_spikes, parent_keyspace, input_data,
                  vertex_applications, vertex_resources,
-                 timer_period_us, sim_ticks):
+                 timer_period_us, sim_ticks, num_profile_samples):
          # Check blob shape - num samples, depth, width, height
         assert len(weights.shape) == 4
 
@@ -108,21 +110,14 @@ class ConvNeuronLayer(object):
                             neuron_decay, neuron_threshold, record_spikes,
                             sim_ticks)
         self.regions[Regions.conv_kernel] =\
-            regions.ConvKernel(weights.shape[0], weights.shape[1],
-                               weights.shape[2], stride)
+            regions.ConvKernel(weights.shape[0], weights.shape[1], weights.shape[2])
         self.regions[Regions.input] = regions.Input(input_data, padding)
         self.regions[Regions.statistics] = Statistics(len(self.statistic_names))
 
-        # Check bias shape
-        '''
-        bias_shape = params[1].data.shape
-        assert len(bias_shape) == 1
-        assert bias_shape[0] == self.output_depth
+        # Add profiler region if required
+        if num_profile_samples is not None:
+            self.regions[Regions.profiler] = Profiler(num_profile_samples)
 
-        # Cache bias
-        # **NOTE** these are repeated across every pixel
-        self.bias = params[1].data
-        '''
         # Calculate memory required for the neurons driven by a single kernel
         neuron_bytes = self.regions[Regions.neurons].output_dim_dtcm_bytes
 
@@ -143,8 +138,9 @@ class ConvNeuronLayer(object):
 
         kernel_width = self.regions[Regions.conv_kernel].kernel_width
         kernel_height = self.regions[Regions.conv_kernel].kernel_height
-        vertex_application = ("binaries/convolution_neuron_%ux%u.aplx" %
-                              (kernel_width, kernel_height))
+        vertex_application = ("binaries/convolution_neuron_%ux%u_%u%s.aplx" %
+                              (kernel_width, kernel_height, stride,
+                               "_profiled" if num_profile_samples is not None else ""))
         logger.debug("\t\tApplication: %s", vertex_application)
 
         # Loop through slices of kernels to assign to each core
@@ -183,6 +179,16 @@ class ConvNeuronLayer(object):
             [region.read_recorded_spikes(v.z_slice,
                                          v.region_memory[Regions.neurons])
             for v in self.vertices], axis=3)
+
+    def read_profile(self):
+        # Get the profile recording region and
+        region = self.regions[Regions.profiler]
+
+        # Return profile data for each vertex that makes up population
+        return [(v.z_slice,
+                 region.read_profile(v.region_memory[Regions.profiler],
+                                     self.profiler_tag_names))
+                for v in self.vertices]
 
     def read_statistics(self):
         # Get the statistics recording region

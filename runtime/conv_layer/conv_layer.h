@@ -39,6 +39,8 @@ enum StatWord
   StatWordInputBufferOverflows,
   StatWordTaskQueueFull,
   StatWordNumTimerEventOverflows,
+  StatWordSpikesEmitted,
+  StatWordSpikesConvolved,
   StatWordMax,
 };
 

@@ -48,11 +48,12 @@ plt.show()
 assert False
 '''
 # **TEMP** single input image and neuron parameters for testing
-neuron_threshold = 1.0
-neuron_decay = np.exp(-1.0 / 20.0)
+neuron_threshold = 16.0
+neuron_decay = np.exp(-1.0 / 10.0)
 test_data = np.load("test_image.npy")
 
-conv_net = ConvNet(neuron_threshold, neuron_decay, test_data)
+conv_net = ConvNet(neuron_threshold, neuron_decay, test_data,
+                   num_profile_samples=None)
 
 relu = Rectlin()
 init_uni = Gaussian(scale=0.05)
@@ -148,6 +149,7 @@ def process_layers(layers, input_dims):
 
     return 0
 
+#layers = layers[:6]
 logger.info("Layers")
 input_dims = [32, 32, 3]
 l = 0

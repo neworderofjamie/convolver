@@ -14,7 +14,7 @@ using namespace Common::ARMIntrinsics;
 //--------------------------------------------------------------------------
 namespace ConvLayer
 {
-template<typename Weight, unsigned int KernelSize>
+template<typename Weight, unsigned int KernelSize, unsigned int Stride>
 class ConvKernelBase
 {
 private:
@@ -31,12 +31,11 @@ public:
   {
     LOG_PRINT(LOG_LEVEL_INFO, "ConvKernelBase::ReadSDRAMData");
 
-    m_Stride = *region++;
     m_NumKernels = *region++;
     const uint32_t kernelDepth = *region++;
 
     LOG_PRINT(LOG_LEVEL_INFO, "\tStride:%u, num kernels:%u, kernel size:%u, kernel depth:%u",
-      m_Stride, m_NumKernels, KernelSize, kernelDepth);
+      Stride, m_NumKernels, KernelSize, kernelDepth);
 
     // Allocate array to hold kernels
     const unsigned int kernelArrayBytes = m_NumKernels * sizeof(Weight*);
@@ -76,26 +75,33 @@ public:
   {
     const unsigned zStride = zIn * KernelSize;
 
+    // Calculate starting position in kernel
+    // **YUCK** certain there's a nicer expression for this
+    const unsigned int xStart = (Stride == 1) ? 0 : (xIn & (Stride - 1)) ? 0 : 1;
+    const unsigned int yStart = (Stride == 1) ? 0 : (yIn & (Stride - 1)) ? 0 : 1;
+
     // Loop through kernel pixels
     // **TODO** stride
-    for(int xKernel = 0; xKernel < (int)KernelSize; xKernel++)
+    for(unsigned int xKernel = xStart; xKernel < KernelSize; xKernel += Stride)
     {
-      for(int yKernel = 0; yKernel < (int)KernelSize; yKernel++)
+      for(unsigned int yKernel = yStart; yKernel < KernelSize; yKernel += Stride)
       {
         // Calculate offset into kernel for this pixel
         const unsigned int kernelIndex = xKernel + (KernelSize * (yKernel + zStride));
 
         // Calculate corresponding output pixel
-        const int xNeuron = xIn - xKernel + 1;
-        const int yNeuron = yIn - yKernel + 1;
+        const int xNeuron = xIn - (int)xKernel + HalfKernelSize;
+        const int yNeuron = yIn - (int)yKernel + HalfKernelSize;
 
         // Loop through kernels and apply
+        // **TODO** is it faster to put this outside of the x,y
+        // loop which will hopefully encourage it to be unrolled
         for(unsigned int k = 0; k < m_NumKernels; k++)
         {
           // Get current kernel
           const Weight *kernel = m_KernelWeights[k];
 
-          applyFunc(xNeuron, yNeuron, k, kernel[kernelIndex]);
+          applyFunc(xNeuron / Stride, yNeuron / Stride, k, kernel[kernelIndex]);
         }
       }
     }
@@ -107,9 +113,10 @@ public:
                     unsigned int fixedPoint, A applyFunc, I getPixelFunc)
   {
     // Stride through image pixels
-    for(unsigned int imageX = 0; imageX < (imageWidth - KernelSize); imageX += m_Stride)
+    // **NOTE** images are padded on host
+    for(unsigned int imageX = 0; imageX < (imageWidth - KernelSize); imageX += Stride)
     {
-      for(unsigned int imageY = 0; imageY < (imageHeight - KernelSize); imageY += m_Stride)
+      for(unsigned int imageY = 0; imageY < (imageHeight - KernelSize); imageY += Stride)
       {
         // Loop through kernels
         for(unsigned int k = 0; k < m_NumKernels; k++)
@@ -142,7 +149,8 @@ public:
           value >>= fixedPoint;
 
           // Apply value to pixel at centre of kernel
-          applyFunc(imageX + HalfKernelSize, imageY + HalfKernelSize, k, value);
+          // **NOTE** because of padding this doesn't need to be offset
+          applyFunc(imageX / Stride, imageY / Stride, k, value);
         }
       }
     }
@@ -151,8 +159,6 @@ public:
   //--------------------------------------------------------------------------
   // Members
   //--------------------------------------------------------------------------
-  unsigned int m_Stride;
-
   // Number of kernels
   unsigned int m_NumKernels;
 

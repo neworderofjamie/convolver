@@ -55,6 +55,8 @@ bool g_PacketPipelineBusy = false;
 //-----------------------------------------------------------------------------
 bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
 {
+  LOG_PRINT(LOG_LEVEL_INFO, "Largest DTCM heap block:%u bytes",
+            sark_heap_max(sark.heap, 0));
   // Verify data header
   if(!g_Config.VerifyHeader(baseAddress, flags))
   {
@@ -170,6 +172,8 @@ void UserEvent(uint, uint)
   uint32_t spikeKey;
   while(g_SpikeInputBuffer.Pop(spikeKey))
   {
+    g_Statistics[StatWordSpikesConvolved]++;
+
     // Extract x, y and z from spike
     // **THINK** if z was at bottom of key it be used to route
     const unsigned int xIn = (spikeKey & 0xFF);
@@ -180,7 +184,9 @@ void UserEvent(uint, uint)
               spikeKey, xIn, yIn, zIn);
 
     // Convolve spike with convolution kernel
+    Profiler::WriteEntry(Profiler::Enter | ProfilerTagConvolveSpike);
     g_ConvKernel.ConvolveSpike(xIn, yIn, zIn, applyInput);
+    Profiler::WriteEntry(Profiler::Exit | ProfilerTagConvolveSpike);
   }
 
   // Pipeline no longer busy
@@ -217,6 +223,7 @@ void TimerTick(uint tick, uint)
   {
     LOG_PRINT(LOG_LEVEL_TRACE, "Timer tick %u", g_Tick);
 
+    UserEvent(0, 0);
     // If this vertex has any input to apply
     if(g_Input.HasInput())
     {
@@ -238,8 +245,10 @@ void TimerTick(uint tick, uint)
       LOG_PRINT(LOG_LEVEL_TRACE, "\tConvolving input image");
 
       // Convolve input image pixels, read using lambda function with kernel
+      Profiler::WriteEntry(Profiler::Enter | ProfilerTagConvolveImage);
       g_ConvKernel.ConvolveImage(g_Input.GetWidth(), g_Input.GetHeight(), g_Input.GetFixedPointPosition(),
         applyInput, getPixel);
+      Profiler::WriteEntry(Profiler::Exit | ProfilerTagConvolveImage);
     }
 
     // Lambda function to emit spike from specified neuron
@@ -250,17 +259,29 @@ void TimerTick(uint tick, uint)
         const unsigned int zOut = g_AppWords[AppWordOutputZStart] + z;
         const uint32_t n = (zOut  << 16) | (y << 8) | x;
 
+        if((n & g_AppWords[AppWordSpikeKey]) != 0)
+        {
+          LOG_PRINT(LOG_LEVEL_ERROR, "BAD KEY %08x %08x (%u, %u, %u)", n, g_AppWords[AppWordSpikeKey], x, y, z);
+        }
         // Send spike
         while(!spin1_send_mc_packet(g_AppWords[AppWordSpikeKey] | n, 0, NO_PAYLOAD))
         {
           spin1_delay_us(1);
         }
+
+        // Increment spikes emitted statistic
+        g_Statistics[StatWordSpikesEmitted]++;
+
+        // Leave a gap
+        spin1_delay_us(5);
       };
 
     LOG_PRINT(LOG_LEVEL_TRACE, "\tUpdating neurons");
 
     // Update neural state using lambda function to emit spikes
+    Profiler::WriteEntry(Profiler::Enter | ProfilerTagUpdateNeurons);
     g_Neurons.Update(emitSpike, g_AppWords[AppWordFixedPointPosition]);
+    Profiler::WriteEntry(Profiler::Exit | ProfilerTagUpdateNeurons);
 
     // Write spike recording data to SDRAM
     g_Neurons.TransferBuffer(DMATagSpikeRecordingWrite);
