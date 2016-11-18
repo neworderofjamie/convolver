@@ -105,13 +105,23 @@ public:
   void AddInputCurrent(unsigned int x, unsigned int y, unsigned int z,
                        int inputCurrent)
   {
-    // Calculate neuron index
-    // **NOTE** n = z + depth * (y + (height * x))
-    int32_t n = __smlabb((int32_t)x, (int32_t)m_Height, (int32_t)y);
-    n = __smlabb(n, (int32_t)m_Depth, (int32_t)z);
+    // If width, height or depth is invalid
+    if(x >= m_Width || y >= m_Height || z >= m_Depth)
+    {
+      //LOG_PRINT(LOG_LEVEL_ERROR, "Invalid neuron coordinates %u, %u, %u",
+      //          x, y, z);
+      return;
+    }
+    else
+    {
+      // Calculate neuron index
+      // **NOTE** n = z + depth * (y + (height * x))
+      int32_t n = __smlabb((int32_t)x, (int32_t)m_Height, (int32_t)y);
+      n = __smlabb(n, (int32_t)m_Depth, (int32_t)z);
 
-    // Add input 'current' to it's 'voltage'
-    m_MembraneVoltage[n] += inputCurrent;
+      // Add input 'current' to it's 'voltage'
+      m_MembraneVoltage[n] += inputCurrent;
+    }
   }
 
   template<typename E>
